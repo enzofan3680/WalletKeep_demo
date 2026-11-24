@@ -3,6 +3,7 @@
     package="com.example.walletkeep_demo">
 
     <application
+        android:name=".WalletKeepApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -16,6 +17,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".AddEditBillActivity"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".BillListActivity"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".StatsActivity"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".SettingsActivity"
+            android:parentActivityName=".MainActivity" />
     </application>
 
 </manifest>
