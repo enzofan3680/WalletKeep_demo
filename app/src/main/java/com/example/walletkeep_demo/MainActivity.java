@@ -272,19 +272,19 @@ public class MainActivity extends AppCompatActivity {
         pbHomeBudget.setProgress(progress);
 
         double remaining = monthlyBudget - monthExpense;
+        if (Math.abs(remaining) < 0.005) {
+            remaining = 0.0;
+        }
         int progressColor;
-        if (ratioPct > 100.0) {
+        if (ratioPct > 100.0 && reminderEnabled) {
             double overAmount = monthExpense - monthlyBudget;
             tvHomeBudgetLabel.setText("本月已超支：" + DateAmountUtils.formatAmount(currency, overAmount) + "！");
-            progressColor = ContextCompat.getColor(this, reminderEnabled ? R.color.colorDanger : R.color.colorSafe);
+            progressColor = ContextCompat.getColor(this, R.color.colorDanger);
         } else if (ratioPct >= 80.0 && reminderEnabled) {
-            tvHomeBudgetLabel.setText(String.format(Locale.CHINA, "预算即将用尽（已用 %d%%）", Math.round(ratioPct)));
+            tvHomeBudgetLabel.setText("预算即将用尽（已用 " + String.format(Locale.CHINA, "%.0f%%", ratioPct) + "）");
             progressColor = ContextCompat.getColor(this, R.color.colorWarning);
         } else {
-            if (Math.abs(remaining) < 0.005) {
-                remaining = 0.0;
-            }
-            tvHomeBudgetLabel.setText("剩余预算：" + DateAmountUtils.formatAmount(currency, remaining));
+            tvHomeBudgetLabel.setText("剩余预算：" + formatBalanceAmount(currency, remaining));
             progressColor = ContextCompat.getColor(this, R.color.colorSafe);
         }
         applyBudgetProgressColors(progressColor);

@@ -185,6 +185,9 @@ public class StatsActivity extends AppCompatActivity {
         double monthExpense = billDao.getMonthlyTotal(currentMonth, Category.TYPE_EXPENSE);
         double monthIncome = billDao.getMonthlyTotal(currentMonth, Category.TYPE_INCOME);
         double monthBalance = monthIncome - monthExpense;
+        if (Math.abs(monthBalance) < 0.005) {
+            monthBalance = 0.0;
+        }
 
         tvStatsExpense.setText(DateAmountUtils.formatAmount(currency, monthExpense));
         tvStatsIncome.setText(DateAmountUtils.formatAmount(currency, monthIncome));
