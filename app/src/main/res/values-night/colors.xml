@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#42A5F5</color>
+    <color name="colorPrimaryDark">#1E88E5</color>
+    <color name="colorAccent">#FF8A65</color>
+
+    <color name="bgPage">#12161C</color>
+    <color name="bgCard">#1E2530</color>
+    <color name="bgInput">#27303F</color>
+    <color name="bgTag">#23374D</color>
+    <color name="dividerColor">#2E3A4B</color>
+
+    <color name="textPrimary">#F1F5F9</color>
+    <color name="textSecondary">#94A3B8</color>
+    <color name="textOnPrimary">#FFFFFF</color>
+
+    <color name="colorExpense">#EF5350</color>
+    <color name="colorIncome">#66BB6A</color>
+    <color name="colorWarning">#FFA726</color>
+    <color name="colorDanger">#EF5350</color>
+    <color name="colorSafe">#66BB6A</color>
+</resources>

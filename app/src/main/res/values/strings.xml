@@ -1,3 +1,8 @@
 <resources>
-    <string name="app_name">WalletKeep_demo</string>
+    <string name="app_name">记账小助手</string>
+    <string name="title_add_bill">记一笔</string>
+    <string name="title_edit_bill">编辑账单</string>
+    <string name="title_bill_list">账单明细</string>
+    <string name="title_stats">收支统计</string>
+    <string name="title_settings">预算与备份设置</string>
 </resources>
