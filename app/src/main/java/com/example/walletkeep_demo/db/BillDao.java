@@ -10,8 +10,12 @@ import com.example.walletkeep_demo.model.Category;
 import com.example.walletkeep_demo.model.CategoryStat;
 import com.example.walletkeep_demo.util.DateAmountUtils;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 账单数据访问对象（DAO）。
@@ -262,10 +266,27 @@ public class BillDao {
     public static final class ImportResult {
         public final int importedCount;
         public final int skippedCount;
+        public final int updatedReceiptCount;
+        public final Set<String> attachedReceiptPaths;
 
-        public ImportResult(int importedCount, int skippedCount) {
+        public ImportResult(int importedCount, int skippedCount, int updatedReceiptCount,
+                            Set<String> attachedReceiptPaths) {
             this.importedCount = importedCount;
             this.skippedCount = skippedCount;
+            this.updatedReceiptCount = updatedReceiptCount;
+            this.attachedReceiptPaths = attachedReceiptPaths != null
+                    ? Collections.unmodifiableSet(new HashSet<String>(attachedReceiptPaths))
+                    : Collections.<String>emptySet();
+        }
+    }
+
+    private static final class ExistingBillMatch {
+        final long id;
+        final String receiptPath;
+
+        ExistingBillMatch(long id, String receiptPath) {
+            this.id = id;
+            this.receiptPath = receiptPath;
         }
     }
 
@@ -274,16 +295,32 @@ public class BillDao {
     }
 
     public ImportResult importBillsInTransaction(List<Bill> bills, CategoryDao categoryDao, int importMode) {
-        if (bills == null) {
-            return new ImportResult(0, 0);
+        if (bills == null || bills.isEmpty()) {
+            if (importMode == IMPORT_MODE_REPLACE) {
+                throw new IllegalArgumentException("备份账单列表为空，已拒绝覆盖清空");
+            }
+            return new ImportResult(0, 0, 0, Collections.<String>emptySet());
         }
-        if (bills.isEmpty() && importMode != IMPORT_MODE_REPLACE) {
-            return new ImportResult(0, 0);
+        boolean hasNonNullBill = false;
+        for (Bill b : bills) {
+            if (b != null) {
+                hasNonNullBill = true;
+                break;
+            }
         }
+        if (!hasNonNullBill) {
+            if (importMode == IMPORT_MODE_REPLACE) {
+                throw new IllegalArgumentException("备份账单列表为空，已拒绝覆盖清空");
+            }
+            return new ImportResult(0, 0, 0, Collections.<String>emptySet());
+        }
+
         CategoryDao resolver = (categoryDao != null) ? categoryDao : new CategoryDao(appContext);
         SQLiteDatabase db = dbHelper.getWritableDatabase();
         int insertedCount = 0;
         int skippedCount = 0;
+        int updatedReceiptCount = 0;
+        Set<String> attachedReceiptPaths = new HashSet<String>();
         db.beginTransaction();
         try {
             if (importMode == IMPORT_MODE_REPLACE) {
@@ -304,28 +341,54 @@ public class BillDao {
                 if (bill.getBillDate() == null || bill.getBillDate().trim().isEmpty()) {
                     bill.setBillDate(DateAmountUtils.getCurrentDate());
                 }
-                if (importMode == IMPORT_MODE_DEDUP_APPEND && existsDuplicateBill(db, bill)) {
-                    skippedCount++;
-                    continue;
+                String incomingReceipt = bill.getReceiptPath() == null ? "" : bill.getReceiptPath().trim();
+                bill.setReceiptPath(incomingReceipt);
+
+                if (importMode == IMPORT_MODE_DEDUP_APPEND) {
+                    ExistingBillMatch match = findDuplicateBill(db, bill);
+                    if (match != null) {
+                        skippedCount++;
+                        String existingReceipt = match.receiptPath == null ? "" : match.receiptPath.trim();
+                        boolean existingValid = !existingReceipt.isEmpty() && new File(existingReceipt).isFile();
+                        boolean incomingValid = !incomingReceipt.isEmpty() && new File(incomingReceipt).isFile();
+                        if (!existingValid && incomingValid) {
+                            ContentValues patch = new ContentValues();
+                            patch.put("receipt_path", incomingReceipt);
+                            int rows = db.update(
+                                    AccountBookDbHelper.TABLE_BILL,
+                                    patch,
+                                    "id = ?",
+                                    new String[]{String.valueOf(match.id)}
+                            );
+                            if (rows > 0) {
+                                updatedReceiptCount++;
+                                attachedReceiptPaths.add(incomingReceipt);
+                            }
+                        }
+                        continue;
+                    }
                 }
                 long rowId = db.insertOrThrow(AccountBookDbHelper.TABLE_BILL, null, buildContentValues(bill, true));
                 bill.setId(rowId);
                 insertedCount++;
+                if (!incomingReceipt.isEmpty()) {
+                    attachedReceiptPaths.add(incomingReceipt);
+                }
             }
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();
         }
-        return new ImportResult(insertedCount, skippedCount);
+        return new ImportResult(insertedCount, skippedCount, updatedReceiptCount, attachedReceiptPaths);
     }
 
-    private boolean existsDuplicateBill(SQLiteDatabase db, Bill bill) {
+    private ExistingBillMatch findDuplicateBill(SQLiteDatabase db, Bill bill) {
         Cursor cursor = null;
         try {
             String note = bill.getNote() == null ? "" : bill.getNote();
             String createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
             cursor = db.rawQuery(
-                    "SELECT id FROM " + AccountBookDbHelper.TABLE_BILL
+                    "SELECT id, receipt_path FROM " + AccountBookDbHelper.TABLE_BILL
                             + " WHERE bill_date = ? AND type = ? AND ABS(amount - ?) < 0.005"
                             + " AND category_id = ? AND IFNULL(note, '') = ? AND IFNULL(created_at, '') = ?"
                             + " LIMIT 1",
@@ -338,7 +401,12 @@ public class BillDao {
                             createdAt
                     }
             );
-            return cursor.moveToFirst();
+            if (cursor.moveToFirst()) {
+                long id = cursor.getLong(0);
+                String receiptPath = cursor.getString(1);
+                return new ExistingBillMatch(id, receiptPath);
+            }
+            return null;
         } finally {
             if (cursor != null) {
                 cursor.close();

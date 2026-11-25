@@ -91,5 +91,18 @@ public class DateAmountUtilsTest {
         assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, warnStatus.level);
         DateAmountUtils.BudgetStatus normalStatus = DateAmountUtils.evaluateBudget(100.0f, 79.99d);
         assertEquals(DateAmountUtils.BudgetStatus.LEVEL_NORMAL, normalStatus.level);
+
+        // Large budget above 2^17 where 32-bit float loses 1-cent precision (131072.01f -> 131072.015625)
+        long largeBudgetCents = 13107201L;
+        DateAmountUtils.BudgetStatus largeExact = DateAmountUtils.evaluateBudgetCents(largeBudgetCents, 131072.01d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, largeExact.level);
+        assertEquals(13107201L, largeExact.budgetCents);
+        assertEquals(0L, largeExact.overCents);
+        assertEquals("¥131072.01", DateAmountUtils.formatCents("¥", largeExact.budgetCents));
+
+        DateAmountUtils.BudgetStatus largeOver = DateAmountUtils.evaluateBudgetCents(largeBudgetCents, 131072.02d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_OVER, largeOver.level);
+        assertEquals(1L, largeOver.overCents);
+        assertEquals("¥0.01", DateAmountUtils.formatCents("¥", largeOver.overCents));
     }
 }

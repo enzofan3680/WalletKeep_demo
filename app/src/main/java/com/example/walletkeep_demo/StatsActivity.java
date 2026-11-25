@@ -178,7 +178,7 @@ public class StatsActivity extends AppCompatActivity {
 
     private void loadStats() {
         String currency = prefsManager.getDefaultCurrency();
-        float monthlyBudget = prefsManager.getMonthlyBudget();
+        long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
 
         tvStatsMonth.setText(formatMonthLabel(currentMonth));
 
@@ -193,7 +193,7 @@ public class StatsActivity extends AppCompatActivity {
         tvStatsIncome.setText(DateAmountUtils.formatAmount(currency, monthIncome));
         tvStatsBalance.setText(formatBalanceAmount(currency, monthBalance));
 
-        updateBudgetSection(currency, monthlyBudget, monthExpense);
+        updateBudgetSection(currency, monthlyBudgetCents, monthExpense);
         updateTypeTabs();
 
         List<CategoryStat> stats = billDao.getCategoryStats(currentMonth, currentType);
@@ -210,8 +210,8 @@ public class StatsActivity extends AppCompatActivity {
         }
     }
 
-    private void updateBudgetSection(String currency, float monthlyBudget, double monthExpense) {
-        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudget(monthlyBudget, monthExpense);
+    private void updateBudgetSection(String currency, long monthlyBudgetCents, double monthExpense) {
+        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudgetCents(monthlyBudgetCents, monthExpense);
         if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
             tvStatsBudgetStatus.setText("未设置月度预算");
             pbStatsBudget.setProgress(0);

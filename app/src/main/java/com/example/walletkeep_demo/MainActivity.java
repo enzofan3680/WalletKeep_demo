@@ -224,7 +224,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadDashboard() {
         String currency = prefsManager.getDefaultCurrency();
-        float monthlyBudget = prefsManager.getMonthlyBudget();
+        long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
         boolean reminderEnabled = prefsManager.isReminderEnabled();
 
         tvHomeMonth.setText(getString(R.string.fmt_home_month_overview, formatMonthLabel(currentMonth)));
@@ -240,7 +240,7 @@ public class MainActivity extends AppCompatActivity {
         tvHomeIncome.setText(DateAmountUtils.formatAmount(currency, monthIncome));
         tvHomeBalance.setText(formatBalanceAmount(currency, balance));
 
-        updateBudgetMonitor(currency, monthlyBudget, monthExpense, reminderEnabled);
+        updateBudgetMonitor(currency, monthlyBudgetCents, monthExpense, reminderEnabled);
 
         List<Bill> recentBills = billDao.getRecentBills(RECENT_BILL_LIMIT);
         recentAdapter.updateData(recentBills, currency);
@@ -255,8 +255,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void updateBudgetMonitor(String currency, float monthlyBudget, double monthExpense, boolean reminderEnabled) {
-        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudget(monthlyBudget, monthExpense);
+    private void updateBudgetMonitor(String currency, long monthlyBudgetCents, double monthExpense, boolean reminderEnabled) {
+        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudgetCents(monthlyBudgetCents, monthExpense);
         if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
             tvHomeBudgetLabel.setText("未设置月度预算，可前往设置开启");
             tvHomeBudgetTotal.setVisibility(View.GONE);

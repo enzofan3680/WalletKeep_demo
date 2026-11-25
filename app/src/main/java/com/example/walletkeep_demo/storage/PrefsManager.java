@@ -12,6 +12,7 @@ public class PrefsManager {
     public static final String PREF_NAME = "app_settings";
 
     public static final String KEY_MONTHLY_BUDGET = "monthly_budget";
+    public static final String KEY_MONTHLY_BUDGET_CENTS = "monthly_budget_cents";
     public static final String KEY_DEFAULT_CURRENCY = "default_currency";
     public static final String KEY_THEME_MODE = "theme_mode";
     public static final String KEY_REMINDER_ENABLED = "reminder_enabled";
@@ -21,6 +22,7 @@ public class PrefsManager {
     public static final String THEME_DARK = "dark";
 
     public static final float DEFAULT_MONTHLY_BUDGET = 3000.0f;
+    public static final long DEFAULT_MONTHLY_BUDGET_CENTS = 300000L;
     public static final String DEFAULT_CURRENCY = "¥";
 
     private final SharedPreferences prefs;
@@ -34,14 +36,38 @@ public class PrefsManager {
         this.prefs = target.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
+    public long getMonthlyBudgetCents() {
+        if (prefs.contains(KEY_MONTHLY_BUDGET_CENTS)) {
+            long cents = prefs.getLong(KEY_MONTHLY_BUDGET_CENTS, DEFAULT_MONTHLY_BUDGET_CENTS);
+            return Math.max(0L, cents);
+        }
+        float legacy = getMonthlyBudget();
+        return Math.max(0L, Math.round((double) legacy * 100.0));
+    }
+
+    public void setMonthlyBudgetCents(long budgetCents) {
+        long safeCents = Math.max(0L, budgetCents);
+        prefs.edit()
+                .putLong(KEY_MONTHLY_BUDGET_CENTS, safeCents)
+                .putFloat(KEY_MONTHLY_BUDGET, (float) (safeCents / 100.0))
+                .apply();
+    }
+
     public float getMonthlyBudget() {
+        if (prefs.contains(KEY_MONTHLY_BUDGET_CENTS)) {
+            return (float) (getMonthlyBudgetCents() / 100.0);
+        }
         float budget = prefs.getFloat(KEY_MONTHLY_BUDGET, DEFAULT_MONTHLY_BUDGET);
         return (Float.isNaN(budget) || Float.isInfinite(budget) || budget < 0f) ? 0f : budget;
     }
 
     public void setMonthlyBudget(float budget) {
         float safeBudget = (Float.isNaN(budget) || Float.isInfinite(budget) || budget < 0f) ? 0f : budget;
-        prefs.edit().putFloat(KEY_MONTHLY_BUDGET, safeBudget).apply();
+        long cents = Math.max(0L, Math.round((double) safeBudget * 100.0));
+        prefs.edit()
+                .putLong(KEY_MONTHLY_BUDGET_CENTS, cents)
+                .putFloat(KEY_MONTHLY_BUDGET, safeBudget)
+                .apply();
     }
 
     public String getDefaultCurrency() {

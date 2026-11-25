@@ -218,8 +218,8 @@ public class SettingsActivity extends AppCompatActivity {
     private void populateSettings() {
         isPopulatingUi = true;
         try {
-            float budget = prefsManager.getMonthlyBudget();
-            etMonthlyBudget.setText(String.format(Locale.CHINA, "%.2f", budget));
+            long budgetCents = prefsManager.getMonthlyBudgetCents();
+            etMonthlyBudget.setText(formatPlainCents(budgetCents));
             etMonthlyBudget.setSelection(etMonthlyBudget.getText().length());
 
             switchBudgetReminder.setChecked(prefsManager.isReminderEnabled());
@@ -271,12 +271,22 @@ public class SettingsActivity extends AppCompatActivity {
             etMonthlyBudget.requestFocus();
             return;
         }
-        double rounded = Math.round(value * 100.0) / 100.0;
-        prefsManager.setMonthlyBudget((float) rounded);
-        etMonthlyBudget.setText(String.format(Locale.CHINA, "%.2f", rounded));
+        if (value > 999999999.99) {
+            Toast.makeText(this, "预算金额超出允许范围", Toast.LENGTH_SHORT).show();
+            etMonthlyBudget.requestFocus();
+            return;
+        }
+        long budgetCents = Math.round(value * 100.0);
+        prefsManager.setMonthlyBudgetCents(budgetCents);
+        etMonthlyBudget.setText(formatPlainCents(budgetCents));
         etMonthlyBudget.setSelection(etMonthlyBudget.getText().length());
         hideKeyboard(etMonthlyBudget);
         Toast.makeText(this, "月度预算已更新", Toast.LENGTH_SHORT).show();
+    }
+
+    private static String formatPlainCents(long cents) {
+        long safe = Math.max(0L, cents);
+        return String.format(Locale.US, "%d.%02d", safe / 100L, safe % 100L);
     }
 
     private void handleExportCsv() {
@@ -413,6 +423,9 @@ public class SettingsActivity extends AppCompatActivity {
                             msg.append("恢复完成：导入 ").append(result.importedCount).append(" 笔账单");
                             if (result.skippedCount > 0) {
                                 msg.append("，跳过重复 ").append(result.skippedCount).append(" 笔");
+                            }
+                            if (result.updatedReceiptCount > 0) {
+                                msg.append("，补齐票据关联 ").append(result.updatedReceiptCount).append(" 笔");
                             }
                             if (result.restoredReceipts > 0) {
                                 msg.append("，还原票据 ").append(result.restoredReceipts).append(" 张");

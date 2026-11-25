@@ -55,12 +55,15 @@ public final class FileStorageManager {
     public static final class RestoreResult {
         public final int importedCount;
         public final int skippedCount;
+        public final int updatedReceiptCount;
         public final int restoredReceipts;
         public final int missingReceipts;
 
-        public RestoreResult(int importedCount, int skippedCount, int restoredReceipts, int missingReceipts) {
+        public RestoreResult(int importedCount, int skippedCount, int updatedReceiptCount,
+                             int restoredReceipts, int missingReceipts) {
             this.importedCount = importedCount;
             this.skippedCount = skippedCount;
+            this.updatedReceiptCount = updatedReceiptCount;
             this.restoredReceipts = restoredReceipts;
             this.missingReceipts = missingReceipts;
         }
@@ -207,7 +210,13 @@ public final class FileStorageManager {
             throw new IllegalArgumentException("BillDao must not be null");
         }
         String text = readFileText(csvFile);
+        if (text == null || text.trim().isEmpty()) {
+            throw new IllegalArgumentException("备份文件为空，已拒绝恢复操作");
+        }
         List<Bill> bills = CsvCodec.parseBills(text);
+        if (bills.isEmpty()) {
+            throw new IllegalArgumentException("备份文件中不包含有效账单记录，已拒绝恢复操作");
+        }
         CategoryDao resolver = categoryDao != null
                 ? categoryDao
                 : (context != null ? new CategoryDao(context) : null);
@@ -215,8 +224,7 @@ public final class FileStorageManager {
         File snapshotDir = resolveReceiptSnapshotDir(csvFile);
         File receiptsDir = context != null ? getReceiptsDir(context) : null;
         List<File> newlyRestoredFiles = new ArrayList<File>();
-        Set<String> referencedReceiptPaths = new HashSet<String>();
-        int restoredReceipts = 0;
+        Set<String> snapshotRestoredPaths = new HashSet<String>();
         int missingReceipts = 0;
 
         try {
@@ -231,7 +239,6 @@ public final class FileStorageManager {
                 }
                 File existingFile = new File(rawPath);
                 if (existingFile.isFile()) {
-                    referencedReceiptPaths.add(existingFile.getAbsolutePath());
                     continue;
                 }
                 String fileName = existingFile.getName();
@@ -246,8 +253,7 @@ public final class FileStorageManager {
                     }
                     String restoredPath = restoredDest.getAbsolutePath();
                     bill.setReceiptPath(restoredPath);
-                    referencedReceiptPaths.add(restoredPath);
-                    restoredReceipts++;
+                    snapshotRestoredPaths.add(restoredPath);
                 } else {
                     bill.setReceiptPath("");
                     missingReceipts++;
@@ -256,13 +262,31 @@ public final class FileStorageManager {
 
             BillDao.ImportResult dbResult = billDao.importBillsInTransaction(bills, resolver, importMode);
 
+            // 清理本次新建但未被任何已入库/已补齐账单引用的票据文件，避免磁盘残留孤立图片
+            for (File restoredFile : newlyRestoredFiles) {
+                if (restoredFile != null
+                        && restoredFile.exists()
+                        && !dbResult.attachedReceiptPaths.contains(restoredFile.getAbsolutePath())) {
+                    restoredFile.delete();
+                }
+            }
+
+            // 仅统计实际成功关联到账单的恢复票据数量
+            int actualRestoredReceipts = 0;
+            for (String path : snapshotRestoredPaths) {
+                if (dbResult.attachedReceiptPaths.contains(path)) {
+                    actualRestoredReceipts++;
+                }
+            }
+
             if (importMode == BillDao.IMPORT_MODE_REPLACE && receiptsDir != null) {
-                cleanupUnreferencedReceipts(receiptsDir, referencedReceiptPaths);
+                cleanupUnreferencedReceipts(receiptsDir, dbResult.attachedReceiptPaths);
             }
             return new RestoreResult(
                     dbResult.importedCount,
                     dbResult.skippedCount,
-                    restoredReceipts,
+                    dbResult.updatedReceiptCount,
+                    actualRestoredReceipts,
                     missingReceipts
             );
         } catch (IOException e) {

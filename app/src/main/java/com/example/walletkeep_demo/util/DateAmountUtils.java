@@ -80,7 +80,10 @@ public final class DateAmountUtils {
     }
 
     public static BudgetStatus evaluateBudget(double monthlyBudget, double monthExpense) {
-        long budgetCents = toCents(monthlyBudget);
+        return evaluateBudgetCents(toCents(monthlyBudget), monthExpense);
+    }
+
+    public static BudgetStatus evaluateBudgetCents(long budgetCents, double monthExpense) {
         long expenseCents = Math.max(0L, toCents(monthExpense));
         if (budgetCents <= 0L) {
             return new BudgetStatus(BudgetStatus.LEVEL_UNSET, 0L, expenseCents, 0L, 0L, 0, 0.0);
