@@ -19,7 +19,19 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
     private static volatile AccountBookDbHelper instance;
 
     private AccountBookDbHelper(Context context) {
-        super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
+        this(context, DB_NAME);
+    }
+
+    /**
+     * 允许设备端测试注入独立数据库名，避免读写目标应用的真实账本数据库。
+     */
+    public AccountBookDbHelper(Context context, String dbName) {
+        super(
+                context.getApplicationContext() != null ? context.getApplicationContext() : context,
+                (dbName == null || dbName.trim().isEmpty()) ? DB_NAME : dbName.trim(),
+                null,
+                DB_VERSION
+        );
     }
 
     public static AccountBookDbHelper getInstance(Context context) {

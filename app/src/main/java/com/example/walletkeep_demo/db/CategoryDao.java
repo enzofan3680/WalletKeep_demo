@@ -22,7 +22,14 @@ public class CategoryDao {
     private final AccountBookDbHelper dbHelper;
 
     public CategoryDao(Context context) {
-        this.dbHelper = AccountBookDbHelper.getInstance(context);
+        this(AccountBookDbHelper.getInstance(context));
+    }
+
+    public CategoryDao(AccountBookDbHelper dbHelper) {
+        if (dbHelper == null) {
+            throw new IllegalArgumentException("AccountBookDbHelper must not be null");
+        }
+        this.dbHelper = dbHelper;
     }
 
     public List<Category> getByType(int type) {

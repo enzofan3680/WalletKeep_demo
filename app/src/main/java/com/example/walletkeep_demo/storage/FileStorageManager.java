@@ -262,11 +262,16 @@ public final class FileStorageManager {
 
             BillDao.ImportResult dbResult = billDao.importBillsInTransaction(bills, resolver, importMode);
 
-            // 清理本次新建但未被任何已入库/已补齐账单引用的票据文件，避免磁盘残留孤立图片
+            Set<String> normalizedAttached = new HashSet<String>();
+            for (String attached : dbResult.attachedReceiptPaths) {
+                normalizedAttached.add(normalizePath(attached));
+            }
+
+            // 清理本次新建但未被任何已入库/已保留/已补齐账单引用的票据文件，避免磁盘残留孤立图片
             for (File restoredFile : newlyRestoredFiles) {
                 if (restoredFile != null
                         && restoredFile.exists()
-                        && !dbResult.attachedReceiptPaths.contains(restoredFile.getAbsolutePath())) {
+                        && !normalizedAttached.contains(normalizePath(restoredFile.getAbsolutePath()))) {
                     restoredFile.delete();
                 }
             }
@@ -274,13 +279,13 @@ public final class FileStorageManager {
             // 仅统计实际成功关联到账单的恢复票据数量
             int actualRestoredReceipts = 0;
             for (String path : snapshotRestoredPaths) {
-                if (dbResult.attachedReceiptPaths.contains(path)) {
+                if (normalizedAttached.contains(normalizePath(path))) {
                     actualRestoredReceipts++;
                 }
             }
 
             if (importMode == BillDao.IMPORT_MODE_REPLACE && receiptsDir != null) {
-                cleanupUnreferencedReceipts(receiptsDir, dbResult.attachedReceiptPaths);
+                cleanupUnreferencedReceipts(receiptsDir, normalizedAttached);
             }
             return new RestoreResult(
                     dbResult.importedCount,
@@ -449,15 +454,27 @@ public final class FileStorageManager {
         }
     }
 
-    private static void cleanupUnreferencedReceipts(File receiptsDir, Set<String> referencedPaths) {
+    private static void cleanupUnreferencedReceipts(File receiptsDir, Set<String> normalizedReferencedPaths) {
         File[] files = receiptsDir.listFiles();
         if (files == null) {
             return;
         }
         for (File f : files) {
-            if (f != null && f.isFile() && !referencedPaths.contains(f.getAbsolutePath())) {
+            if (f != null && f.isFile() && !normalizedReferencedPaths.contains(normalizePath(f.getAbsolutePath()))) {
                 f.delete();
             }
+        }
+    }
+
+    private static String normalizePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        File file = new File(path);
+        try {
+            return file.getCanonicalPath();
+        } catch (IOException e) {
+            return file.getAbsolutePath();
         }
     }
 

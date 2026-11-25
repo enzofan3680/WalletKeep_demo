@@ -31,8 +31,16 @@ public class BillDao {
     private final AccountBookDbHelper dbHelper;
 
     public BillDao(Context context) {
-        this.appContext = context.getApplicationContext();
-        this.dbHelper = AccountBookDbHelper.getInstance(this.appContext);
+        this(context, AccountBookDbHelper.getInstance(context));
+    }
+
+    public BillDao(Context context, AccountBookDbHelper dbHelper) {
+        if (context == null || dbHelper == null) {
+            throw new IllegalArgumentException("Context and AccountBookDbHelper must not be null");
+        }
+        Context app = context.getApplicationContext();
+        this.appContext = (app != null) ? app : context;
+        this.dbHelper = dbHelper;
     }
 
     public long insert(Bill bill) {
@@ -257,7 +265,7 @@ public class BillDao {
         demoBills.add(createDemoBill(320.00, Category.TYPE_EXPENSE, "居家", "水电燃气缴费", previousMonth + "-10"));
         demoBills.add(createDemoBill(1200.00, Category.TYPE_INCOME, "兼职", "周末设计外包", previousMonth + "-06"));
 
-        return insertBillsInTransaction(demoBills, new CategoryDao(appContext));
+        return insertBillsInTransaction(demoBills, new CategoryDao(dbHelper));
     }
 
     public static final int IMPORT_MODE_REPLACE = 0;
@@ -315,7 +323,7 @@ public class BillDao {
             return new ImportResult(0, 0, 0, Collections.<String>emptySet());
         }
 
-        CategoryDao resolver = (categoryDao != null) ? categoryDao : new CategoryDao(appContext);
+        CategoryDao resolver = (categoryDao != null) ? categoryDao : new CategoryDao(dbHelper);
         SQLiteDatabase db = dbHelper.getWritableDatabase();
         int insertedCount = 0;
         int skippedCount = 0;
@@ -351,7 +359,10 @@ public class BillDao {
                         String existingReceipt = match.receiptPath == null ? "" : match.receiptPath.trim();
                         boolean existingValid = !existingReceipt.isEmpty() && new File(existingReceipt).isFile();
                         boolean incomingValid = !incomingReceipt.isEmpty() && new File(incomingReceipt).isFile();
-                        if (!existingValid && incomingValid) {
+                        if (existingValid) {
+                            // 保留已有账单当前实际引用的有效票据（含本次刚从备份快照还原回原路径的图片）
+                            attachedReceiptPaths.add(existingReceipt);
+                        } else if (incomingValid) {
                             ContentValues patch = new ContentValues();
                             patch.put("receipt_path", incomingReceipt);
                             int rows = db.update(
