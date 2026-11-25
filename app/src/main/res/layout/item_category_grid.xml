@@ -36,6 +36,6 @@
         android:layout_marginTop="2dp"
         android:text="自定义"
         android:textColor="@color/textSecondary"
-        android:textSize="9sp"
+        android:textSize="12sp"
         android:visibility="gone" />
 </LinearLayout>

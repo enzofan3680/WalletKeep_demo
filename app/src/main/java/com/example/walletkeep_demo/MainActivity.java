@@ -256,7 +256,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateBudgetMonitor(String currency, float monthlyBudget, double monthExpense, boolean reminderEnabled) {
-        if (monthlyBudget <= 0f) {
+        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudget(monthlyBudget, monthExpense);
+        if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
             tvHomeBudgetLabel.setText("未设置月度预算，可前往设置开启");
             tvHomeBudgetTotal.setVisibility(View.GONE);
             pbHomeBudget.setProgress(0);
@@ -265,26 +266,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
         tvHomeBudgetTotal.setVisibility(View.VISIBLE);
-        tvHomeBudgetTotal.setText("预算 " + DateAmountUtils.formatAmount(currency, monthlyBudget));
+        tvHomeBudgetTotal.setText("预算 " + DateAmountUtils.formatCents(currency, status.budgetCents));
+        pbHomeBudget.setProgress(status.progressPercent);
 
-        double ratioPct = (monthExpense * 100.0) / monthlyBudget;
-        int progress = (int) Math.min(100L, Math.max(0L, Math.round(ratioPct)));
-        pbHomeBudget.setProgress(progress);
-
-        double remaining = monthlyBudget - monthExpense;
-        if (Math.abs(remaining) < 0.005) {
-            remaining = 0.0;
-        }
         int progressColor;
-        if (ratioPct > 100.0 && reminderEnabled) {
-            double overAmount = monthExpense - monthlyBudget;
-            tvHomeBudgetLabel.setText("本月已超支：" + DateAmountUtils.formatAmount(currency, overAmount) + "！");
+        if (status.level == DateAmountUtils.BudgetStatus.LEVEL_OVER && reminderEnabled) {
+            tvHomeBudgetLabel.setText("本月已超支：" + DateAmountUtils.formatCents(currency, status.overCents) + "！");
             progressColor = ContextCompat.getColor(this, R.color.colorDanger);
-        } else if (ratioPct >= 80.0 && reminderEnabled) {
-            tvHomeBudgetLabel.setText("预算即将用尽（已用 " + String.format(Locale.CHINA, "%.0f%%", ratioPct) + "）");
+        } else if (status.level == DateAmountUtils.BudgetStatus.LEVEL_WARNING && reminderEnabled) {
+            tvHomeBudgetLabel.setText("预算即将用尽（已用 " + String.format(Locale.CHINA, "%.0f%%", status.usagePercent) + "）");
             progressColor = ContextCompat.getColor(this, R.color.colorWarning);
         } else {
-            tvHomeBudgetLabel.setText("剩余预算：" + formatBalanceAmount(currency, remaining));
+            tvHomeBudgetLabel.setText("剩余预算：" + DateAmountUtils.formatCents(currency, status.remainingCents));
             progressColor = ContextCompat.getColor(this, R.color.colorSafe);
         }
         applyBudgetProgressColors(progressColor);
@@ -309,6 +302,7 @@ public class MainActivity extends AppCompatActivity {
         } else {
             mutated.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
         }
+        pbHomeBudget.setProgressDrawable(mutated);
     }
 
     private void showOnboardingDialog() {

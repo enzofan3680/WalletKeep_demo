@@ -29,6 +29,7 @@ public final class DateAmountUtils {
 
     public static String shiftMonth(String yyyyMM, int deltaMonths) {
         SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM", Locale.CHINA);
+        fmt.setLenient(false);
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.DAY_OF_MONTH, 1);
         if (yyyyMM != null && !yyyyMM.trim().isEmpty()) {
@@ -43,6 +44,102 @@ public final class DateAmountUtils {
         }
         cal.add(Calendar.MONTH, deltaMonths);
         return fmt.format(cal.getTime());
+    }
+
+    public static boolean isValidDate(String yyyyMMdd) {
+        if (yyyyMMdd == null) {
+            return false;
+        }
+        String trimmed = yyyyMMdd.trim();
+        if (!trimmed.matches("\\d{4}-\\d{2}-\\d{2}")) {
+            return false;
+        }
+        SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd", Locale.CHINA);
+        fmt.setLenient(false);
+        try {
+            return fmt.parse(trimmed) != null;
+        } catch (ParseException e) {
+            return false;
+        }
+    }
+
+    public static long toCents(double amount) {
+        if (Double.isNaN(amount) || Double.isInfinite(amount)) {
+            return 0L;
+        }
+        return Math.round(amount * 100.0);
+    }
+
+    public static String formatCents(String currency, long cents) {
+        String symbol = (currency == null || currency.isEmpty()) ? "¥" : currency;
+        boolean negative = cents < 0L;
+        long absCents = negative ? (cents == Long.MIN_VALUE ? Long.MAX_VALUE : -cents) : cents;
+        long yuan = absCents / 100L;
+        long fen = absCents % 100L;
+        return String.format(Locale.CHINA, "%s%s%d.%02d", negative ? "-" : "", symbol, yuan, fen);
+    }
+
+    public static BudgetStatus evaluateBudget(double monthlyBudget, double monthExpense) {
+        long budgetCents = toCents(monthlyBudget);
+        long expenseCents = Math.max(0L, toCents(monthExpense));
+        if (budgetCents <= 0L) {
+            return new BudgetStatus(BudgetStatus.LEVEL_UNSET, 0L, expenseCents, 0L, 0L, 0, 0.0);
+        }
+        double usagePercent = (expenseCents * 100.0) / budgetCents;
+        int progressPercent = (int) Math.min(100L, Math.max(0L, Math.round(usagePercent)));
+        long remainingCents = budgetCents - expenseCents;
+        if (expenseCents > budgetCents) {
+            return new BudgetStatus(
+                    BudgetStatus.LEVEL_OVER,
+                    budgetCents,
+                    expenseCents,
+                    remainingCents,
+                    expenseCents - budgetCents,
+                    progressPercent,
+                    usagePercent
+            );
+        }
+        // 使用整数乘法判断 80% 预警边界（避免浮点精度偏差），同时防止极端数值溢出
+        boolean isWarning = (expenseCents >= budgetCents)
+                || (budgetCents <= Long.MAX_VALUE / 100L
+                ? expenseCents * 100L >= budgetCents * 80L
+                : usagePercent >= 80.0);
+        int level = isWarning ? BudgetStatus.LEVEL_WARNING : BudgetStatus.LEVEL_NORMAL;
+        return new BudgetStatus(
+                level,
+                budgetCents,
+                expenseCents,
+                remainingCents,
+                0L,
+                progressPercent,
+                usagePercent
+        );
+    }
+
+    public static final class BudgetStatus {
+        public static final int LEVEL_UNSET = 0;
+        public static final int LEVEL_NORMAL = 1;
+        public static final int LEVEL_WARNING = 2;
+        public static final int LEVEL_OVER = 3;
+
+        public final int level;
+        public final long budgetCents;
+        public final long expenseCents;
+        public final long remainingCents;
+        public final long overCents;
+        public final int progressPercent;
+        public final double usagePercent;
+
+        public BudgetStatus(int level, long budgetCents, long expenseCents, long remainingCents,
+                            long overCents, int progressPercent, double usagePercent) {
+            this.level = level;
+            this.budgetCents = budgetCents;
+            this.expenseCents = expenseCents;
+            this.remainingCents = remainingCents;
+            this.overCents = overCents;
+            this.progressPercent = progressPercent;
+            this.usagePercent = usagePercent;
+        }
     }
 
     public static String formatAmount(String currency, double amount) {

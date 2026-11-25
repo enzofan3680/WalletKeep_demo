@@ -62,8 +62,8 @@ public final class CsvCodec {
                 continue;
             }
             int rowNum = i + 1;
-            if (cols.size() < 6) {
-                throw new IllegalArgumentException("第 " + rowNum + " 行字段数不足");
+            if (cols.size() < 6 || cols.size() > 8) {
+                throw new IllegalArgumentException("第 " + rowNum + " 行字段数量异常（共 " + cols.size() + " 列）");
             }
             double amount = DateAmountUtils.parsePositiveAmount(cols.get(1));
             if (amount <= 0) {
@@ -86,6 +86,8 @@ public final class CsvCodec {
             String billDate = cols.get(5).trim();
             if (billDate.isEmpty()) {
                 billDate = DateAmountUtils.getCurrentDate();
+            } else if (!DateAmountUtils.isValidDate(billDate)) {
+                throw new IllegalArgumentException("第 " + rowNum + " 行日期格式不合法: " + billDate);
             }
             String receiptPath = cols.size() > 6 ? cols.get(6).trim() : "";
             String createdAt = cols.size() > 7 && !cols.get(7).trim().isEmpty()
@@ -122,6 +124,8 @@ public final class CsvCodec {
         List<String> currentRow = new ArrayList<String>();
         StringBuilder currentField = new StringBuilder();
         boolean inQuotes = false;
+        boolean fieldStarted = false;
+        boolean justClosedQuote = false;
         int len = content.length();
         for (int i = 0; i < len; i++) {
             char c = content.charAt(i);
@@ -132,16 +136,40 @@ public final class CsvCodec {
                         i++;
                     } else {
                         inQuotes = false;
+                        justClosedQuote = true;
                     }
                 } else {
                     currentField.append(c);
                 }
+            } else if (justClosedQuote) {
+                if (c == ',') {
+                    currentRow.add(currentField.toString());
+                    currentField.setLength(0);
+                    fieldStarted = false;
+                    justClosedQuote = false;
+                } else if (c == '\r') {
+                    // ignore CR, expect LF or EOF
+                } else if (c == '\n') {
+                    currentRow.add(currentField.toString());
+                    currentField.setLength(0);
+                    rows.add(currentRow);
+                    currentRow = new ArrayList<String>();
+                    fieldStarted = false;
+                    justClosedQuote = false;
+                } else {
+                    throw new IllegalArgumentException("CSV 格式损坏：闭合引号后出现非法字符");
+                }
             } else {
                 if (c == '"') {
+                    if (fieldStarted) {
+                        throw new IllegalArgumentException("CSV 格式损坏：未加引号字段中出现非法双引号");
+                    }
                     inQuotes = true;
+                    fieldStarted = true;
                 } else if (c == ',') {
                     currentRow.add(currentField.toString());
                     currentField.setLength(0);
+                    fieldStarted = false;
                 } else if (c == '\r') {
                     // ignore CR, handle LF
                 } else if (c == '\n') {
@@ -149,12 +177,17 @@ public final class CsvCodec {
                     currentField.setLength(0);
                     rows.add(currentRow);
                     currentRow = new ArrayList<String>();
+                    fieldStarted = false;
                 } else {
                     currentField.append(c);
+                    fieldStarted = true;
                 }
             }
         }
-        if (currentField.length() > 0 || !currentRow.isEmpty()) {
+        if (inQuotes) {
+            throw new IllegalArgumentException("CSV 格式损坏：存在未闭合的双引号");
+        }
+        if (currentField.length() > 0 || !currentRow.isEmpty() || justClosedQuote) {
             currentRow.add(currentField.toString());
             rows.add(currentRow);
         }

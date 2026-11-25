@@ -211,28 +211,27 @@ public class StatsActivity extends AppCompatActivity {
     }
 
     private void updateBudgetSection(String currency, float monthlyBudget, double monthExpense) {
-        if (monthlyBudget <= 0f) {
+        DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudget(monthlyBudget, monthExpense);
+        if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
             tvStatsBudgetStatus.setText("未设置月度预算");
             pbStatsBudget.setProgress(0);
             applyBudgetProgressColors(Color.WHITE);
             return;
         }
 
-        double usagePct = (monthExpense * 100.0) / monthlyBudget;
         tvStatsBudgetStatus.setText(String.format(
                 Locale.CHINA,
                 "月度预算 %s · 已使用 %.1f%%",
-                DateAmountUtils.formatAmount(currency, monthlyBudget),
-                usagePct
+                DateAmountUtils.formatCents(currency, status.budgetCents),
+                status.usagePercent
         ));
 
-        int progress = (int) Math.min(100L, Math.max(0L, Math.round(usagePct)));
-        pbStatsBudget.setProgress(progress);
+        pbStatsBudget.setProgress(status.progressPercent);
 
         int progressColor;
-        if (usagePct >= 100.0) {
+        if (status.level == DateAmountUtils.BudgetStatus.LEVEL_OVER) {
             progressColor = ContextCompat.getColor(this, R.color.colorDanger);
-        } else if (usagePct >= 80.0) {
+        } else if (status.level == DateAmountUtils.BudgetStatus.LEVEL_WARNING) {
             progressColor = ContextCompat.getColor(this, R.color.colorWarning);
         } else {
             progressColor = ContextCompat.getColor(this, R.color.textOnPrimary);
@@ -259,6 +258,7 @@ public class StatsActivity extends AppCompatActivity {
         } else {
             mutated.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
         }
+        pbStatsBudget.setProgressDrawable(mutated);
     }
 
     private void updateTypeTabs() {

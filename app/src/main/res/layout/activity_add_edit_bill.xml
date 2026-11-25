@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bgPage"
     android:fillViewport="true">
 
     <LinearLayout
@@ -93,13 +93,15 @@
                     android:background="@android:color/transparent"
                     android:hint="0.00"
                     android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
                     android:inputType="numberDecimal"
                     android:maxLength="12"
                     android:singleLine="true"
                     android:textColor="@color/textPrimary"
                     android:textColorHint="@color/textSecondary"
                     android:textSize="26sp"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    tools:targetApi="o" />
             </LinearLayout>
         </LinearLayout>
 
@@ -138,7 +140,7 @@
                         android:layout_marginTop="2dp"
                         android:text="长按自定义分类可删除"
                         android:textColor="@color/textSecondary"
-                        android:textSize="11sp" />
+                        android:textSize="12sp" />
                 </LinearLayout>
 
                 <TextView
@@ -168,7 +170,8 @@
                 android:numColumns="4"
                 android:scrollbars="none"
                 android:stretchMode="columnWidth"
-                android:verticalSpacing="8dp" />
+                android:verticalSpacing="8dp"
+                tools:ignore="NestedScrolling" />
         </LinearLayout>
 
         <!-- 4. 日期与备注卡片 -->
@@ -239,13 +242,16 @@
                 android:background="@drawable/bg_input"
                 android:gravity="top|start"
                 android:hint="填写消费或收入备注（选填）"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textCapSentences"
                 android:maxLength="120"
                 android:maxLines="3"
                 android:minLines="2"
                 android:padding="12dp"
                 android:textColor="@color/textPrimary"
                 android:textColorHint="@color/textSecondary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                tools:targetApi="o" />
         </LinearLayout>
 
         <!-- 5. 票据/小票图片附件卡片（私有文件存储） -->
@@ -333,7 +339,7 @@
                         android:layout_marginTop="4dp"
                         android:text="点击缩略图可查看大图"
                         android:textColor="@color/textSecondary"
-                        android:textSize="11sp" />
+                        android:textSize="12sp" />
 
                     <TextView
                         android:id="@+id/btn_remove_receipt"

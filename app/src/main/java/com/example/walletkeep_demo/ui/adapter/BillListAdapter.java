@@ -14,6 +14,7 @@ import com.example.walletkeep_demo.model.Bill;
 import com.example.walletkeep_demo.model.Category;
 import com.example.walletkeep_demo.util.DateAmountUtils;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -78,7 +79,8 @@ public class BillListAdapter extends BaseAdapter {
         holder.tvIcon.setText(resolveIcon(bill.getCategoryIcon(), categoryName));
 
         String receiptPath = trimToNull(bill.getReceiptPath());
-        holder.tvReceiptTag.setVisibility(receiptPath != null ? View.VISIBLE : View.GONE);
+        boolean hasValidReceipt = receiptPath != null && new File(receiptPath).isFile();
+        holder.tvReceiptTag.setVisibility(hasValidReceipt ? View.VISIBLE : View.GONE);
 
         String note = trimToNull(bill.getNote());
         holder.tvNote.setText(note != null ? note : "无备注");

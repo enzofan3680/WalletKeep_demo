@@ -2,10 +2,12 @@ package com.example.walletkeep_demo;
 
 import android.app.DatePickerDialog;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -46,6 +48,8 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 记一笔 / 编辑账单页面：支持收支切换、金额输入、动态网格分类选择、
@@ -93,6 +97,8 @@ public class AddEditBillActivity extends AppCompatActivity {
     private int currentType = Category.TYPE_EXPENSE;
     private String selectedDate = "";
     private String originalReceiptPath = "";
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private boolean isCopyingReceipt = false;
     private String currentReceiptPath = "";
     private String pendingNewReceiptPath = "";
     private boolean savedSuccessfully = false;
@@ -198,6 +204,7 @@ public class AddEditBillActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        ioExecutor.shutdown();
         if (isFinishing() && !savedSuccessfully) {
             cleanupPendingNewReceipt();
         }
@@ -532,21 +539,62 @@ public class AddEditBillActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_PICK_RECEIPT && resultCode == RESULT_OK && data != null) {
-            Uri uri = data.getData();
-            if (uri == null) {
+            final Uri uri = data.getData();
+            if (uri == null || isCopyingReceipt) {
                 return;
             }
-            try {
-                String copiedPath = FileStorageManager.copyReceiptImage(this, uri);
-                if (!pendingNewReceiptPath.isEmpty() && !pendingNewReceiptPath.equals(copiedPath)) {
-                    FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
+            isCopyingReceipt = true;
+            btnPickReceipt.setEnabled(false);
+            btnPickReceipt.setText("正在保存...");
+            btnSaveBill.setEnabled(false);
+            final Context appContext = getApplicationContext();
+            ioExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        final String copiedPath = FileStorageManager.copyReceiptImage(appContext, uri);
+                        final Bitmap thumb = FileStorageManager.decodeSampledBitmap(copiedPath, 360, 360);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isUiInvalid()) {
+                                    FileStorageManager.deleteReceiptFile(copiedPath);
+                                    return;
+                                }
+                                isCopyingReceipt = false;
+                                btnPickReceipt.setEnabled(true);
+                                btnPickReceipt.setText("选择图片");
+                                btnSaveBill.setEnabled(true);
+                                if (!pendingNewReceiptPath.isEmpty() && !pendingNewReceiptPath.equals(copiedPath)) {
+                                    FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
+                                }
+                                pendingNewReceiptPath = copiedPath;
+                                currentReceiptPath = copiedPath;
+                                applyReceiptPreviewBitmap(copiedPath, thumb);
+                            }
+                        });
+                    } catch (final IOException e) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isUiInvalid()) {
+                                    return;
+                                }
+                                isCopyingReceipt = false;
+                                btnPickReceipt.setEnabled(true);
+                                btnPickReceipt.setText("选择图片");
+                                btnSaveBill.setEnabled(true);
+                                String msg = e.getMessage();
+                                Toast.makeText(
+                                        AddEditBillActivity.this,
+                                        "保存图片失败：" + (msg == null || msg.trim().isEmpty() ? "无法写入文件" : msg),
+                                        Toast.LENGTH_SHORT
+                                ).show();
+                            }
+                        });
+                    }
                 }
-                pendingNewReceiptPath = copiedPath;
-                currentReceiptPath = copiedPath;
-                updateReceiptPreview();
-            } catch (IOException e) {
-                Toast.makeText(this, "保存图片失败：" + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
+            });
         }
     }
 
@@ -560,14 +608,26 @@ public class AddEditBillActivity extends AppCompatActivity {
 
         layoutReceiptPreview.setVisibility(View.VISIBLE);
         Bitmap thumb = FileStorageManager.decodeSampledBitmap(currentReceiptPath, 360, 360);
+        applyReceiptPreviewBitmap(currentReceiptPath, thumb);
+    }
+
+    private void applyReceiptPreviewBitmap(String path, Bitmap thumb) {
+        layoutReceiptPreview.setVisibility(View.VISIBLE);
         if (thumb != null) {
             ivReceiptThumb.setImageBitmap(thumb);
-            File file = new File(currentReceiptPath);
-            tvReceiptPath.setText(file.getName() + "\n" + currentReceiptPath);
+            File file = new File(path);
+            tvReceiptPath.setText(file.getName() + "\n" + path);
         } else {
             ivReceiptThumb.setImageResource(android.R.drawable.ic_menu_report_image);
             tvReceiptPath.setText("原票据文件不存在");
         }
+    }
+
+    private boolean isUiInvalid() {
+        if (isFinishing()) {
+            return true;
+        }
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed();
     }
 
     private void showReceiptZoomDialog() {

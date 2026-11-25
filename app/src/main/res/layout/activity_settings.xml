@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bgPage"
     android:fillViewport="true">
 
     <LinearLayout
@@ -50,6 +50,7 @@
                     android:background="@drawable/bg_input"
                     android:hint="例如 3000.00"
                     android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
                     android:inputType="numberDecimal"
                     android:maxLength="12"
                     android:paddingLeft="12dp"
@@ -57,7 +58,8 @@
                     android:singleLine="true"
                     android:textColor="@color/textPrimary"
                     android:textColorHint="@color/textSecondary"
-                    android:textSize="15sp" />
+                    android:textSize="15sp"
+                    tools:targetApi="o" />
 
                 <TextView
                     android:id="@+id/btn_save_budget"

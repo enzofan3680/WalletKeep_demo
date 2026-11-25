@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/bgPage">
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <ScrollView
         android:layout_width="match_parent"
@@ -98,6 +96,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
+                    android:baselineAligned="false"
                     android:orientation="horizontal">
 
                     <LinearLayout
@@ -210,6 +209,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_card"
+                android:baselineAligned="false"
                 android:orientation="horizontal"
                 android:paddingLeft="6dp"
                 android:paddingTop="12dp"
@@ -378,10 +378,11 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:divider="@null"
-                android:dividerHeight="4dp"
+                android:dividerHeight="8dp"
                 android:focusable="false"
                 android:listSelector="@android:color/transparent"
-                android:scrollbars="none" />
+                android:scrollbars="none"
+                tools:ignore="NestedScrolling" />
 
             <TextView
                 android:id="@+id/tv_home_empty"
@@ -415,4 +416,4 @@
         android:textColor="@color/textOnPrimary"
         android:textSize="28sp"
         android:textStyle="bold" />
-</FrameLayout>
+</merge>

@@ -2,7 +2,9 @@ package com.example.walletkeep_demo;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.database.SQLException;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.MenuItem;
 import android.view.View;
@@ -31,6 +33,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 预算与备份设置页面：管理月度预算、预警开关、默认币种、深色主题（SharedPreferences），
@@ -60,6 +64,8 @@ public class SettingsActivity extends AppCompatActivity {
 
     // 防止代码回填控件状态或 recreate 状态恢复时触发监听器循环
     private boolean isPopulatingUi = false;
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private boolean isIoBusy = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +89,12 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         populateSettings();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        ioExecutor.shutdown();
     }
 
     @Override
@@ -268,32 +280,73 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void handleExportCsv() {
-        List<Bill> bills = billDao.getAllBills();
-        if (bills.isEmpty()) {
-            Toast.makeText(this, "当前没有账单可导出", Toast.LENGTH_SHORT).show();
+        if (isIoBusy) {
             return;
         }
-        try {
-            File exportedFile = FileStorageManager.exportBillsToCsv(this, bills);
-            updateBackupInfo();
-            String message = String.format(
-                    Locale.CHINA,
-                    "共导出 %d 笔账单记录\n\n文件大小：%d 字节\n私有目录路径：\n%s",
-                    bills.size(),
-                    exportedFile.length(),
-                    exportedFile.getAbsolutePath()
-            );
-            new AlertDialog.Builder(this)
-                    .setTitle("导出成功")
-                    .setMessage(message)
-                    .setPositiveButton("知道了", null)
-                    .show();
-        } catch (IOException e) {
-            Toast.makeText(this, "导出失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+        setIoBusy(true);
+        final Context appContext = getApplicationContext();
+        ioExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final List<Bill> bills = billDao.getAllBills();
+                    if (bills.isEmpty()) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (isUiInvalid()) {
+                                    return;
+                                }
+                                setIoBusy(false);
+                                Toast.makeText(SettingsActivity.this, "当前没有账单可导出", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                        return;
+                    }
+                    final FileStorageManager.ExportResult result = FileStorageManager.exportBillsBackup(appContext, bills);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            setIoBusy(false);
+                            updateBackupInfo();
+                            String message = String.format(
+                                    Locale.CHINA,
+                                    "共导出 %d 笔账单记录，同步备份 %d 张票据图片\n\n文件大小：%d 字节\n私有目录路径：\n%s",
+                                    bills.size(),
+                                    result.backedUpReceipts,
+                                    result.csvFile.length(),
+                                    result.csvFile.getAbsolutePath()
+                            );
+                            new AlertDialog.Builder(SettingsActivity.this)
+                                    .setTitle("导出成功")
+                                    .setMessage(message)
+                                    .setPositiveButton("知道了", null)
+                                    .show();
+                        }
+                    });
+                } catch (final IOException e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            setIoBusy(false);
+                            Toast.makeText(SettingsActivity.this, "导出失败：" + safeMessage(e), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                }
+            }
+        });
     }
 
     private void handleImportCsv() {
+        if (isIoBusy) {
+            return;
+        }
         final List<File> files = FileStorageManager.listBackupFiles(this);
         if (files.isEmpty()) {
             Toast.makeText(this, "暂无可恢复的 CSV 备份文件，请先导出", Toast.LENGTH_SHORT).show();
@@ -305,33 +358,101 @@ public class SettingsActivity extends AppCompatActivity {
                 .setItems(labels, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        File chosenFile = files.get(which);
-                        try {
-                            int importedCount = FileStorageManager.importBillsFromCsv(
-                                    SettingsActivity.this,
-                                    chosenFile,
-                                    billDao,
-                                    categoryDao
-                            );
-                            Toast.makeText(
-                                    SettingsActivity.this,
-                                    String.format(Locale.CHINA, "成功导入 %d 笔账单", importedCount),
-                                    Toast.LENGTH_SHORT
-                            ).show();
-                        } catch (IOException e) {
-                            Toast.makeText(SettingsActivity.this, "读取备份失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
-                        } catch (IllegalArgumentException e) {
-                            Toast.makeText(SettingsActivity.this, "CSV 格式错误：" + e.getMessage(), Toast.LENGTH_LONG).show();
-                        } catch (IllegalStateException e) {
-                            Toast.makeText(SettingsActivity.this, "导入失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
-                        }
+                        showImportModeDialog(files.get(which));
                     }
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
+    private void showImportModeDialog(final File chosenFile) {
+        String[] modeLabels = new String[]{
+                "覆盖恢复（推荐）：清空当前账单并按备份还原",
+                "增量去重追加：保留当前账单，自动跳过重复项"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("选择恢复方式")
+                .setItems(modeLabels, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        int importMode = (which == 0)
+                                ? BillDao.IMPORT_MODE_REPLACE
+                                : BillDao.IMPORT_MODE_DEDUP_APPEND;
+                        runImportCsvAsync(chosenFile, importMode);
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void runImportCsvAsync(final File chosenFile, final int importMode) {
+        if (isIoBusy) {
+            return;
+        }
+        setIoBusy(true);
+        final Context appContext = getApplicationContext();
+        ioExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final FileStorageManager.RestoreResult result = FileStorageManager.importBillsFromCsv(
+                            appContext,
+                            chosenFile,
+                            billDao,
+                            categoryDao,
+                            importMode
+                    );
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            setIoBusy(false);
+                            StringBuilder msg = new StringBuilder();
+                            msg.append("恢复完成：导入 ").append(result.importedCount).append(" 笔账单");
+                            if (result.skippedCount > 0) {
+                                msg.append("，跳过重复 ").append(result.skippedCount).append(" 笔");
+                            }
+                            if (result.restoredReceipts > 0) {
+                                msg.append("，还原票据 ").append(result.restoredReceipts).append(" 张");
+                            }
+                            if (result.missingReceipts > 0) {
+                                msg.append("（").append(result.missingReceipts).append(" 张票据快照缺失已自动忽略）");
+                            }
+                            Toast.makeText(SettingsActivity.this, msg.toString(), Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (final IOException e) {
+                    postImportError("读取备份失败：" + safeMessage(e));
+                } catch (final IllegalArgumentException e) {
+                    postImportError("CSV 格式错误：" + safeMessage(e));
+                } catch (final IllegalStateException e) {
+                    postImportError("导入失败：" + safeMessage(e));
+                } catch (final SQLException e) {
+                    postImportError("数据库写入失败：" + safeMessage(e));
+                }
+            }
+        });
+    }
+
+    private void postImportError(final String errorMessage) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (isUiInvalid()) {
+                    return;
+                }
+                setIoBusy(false);
+                Toast.makeText(SettingsActivity.this, errorMessage, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
     private void handlePreviewCsv() {
+        if (isIoBusy) {
+            return;
+        }
         final List<File> files = FileStorageManager.listBackupFiles(this);
         if (files.isEmpty()) {
             Toast.makeText(this, "暂无可预览的 CSV 备份文件，请先导出", Toast.LENGTH_SHORT).show();
@@ -343,17 +464,62 @@ public class SettingsActivity extends AppCompatActivity {
                 .setItems(labels, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        File chosenFile = files.get(which);
-                        try {
-                            String content = FileStorageManager.readFileText(chosenFile);
-                            showCsvPreviewDialog(chosenFile, content);
-                        } catch (IOException e) {
-                            Toast.makeText(SettingsActivity.this, "读取文件失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
-                        }
+                        final File chosenFile = files.get(which);
+                        setIoBusy(true);
+                        ioExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    final String content = FileStorageManager.readFileText(chosenFile);
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            setIoBusy(false);
+                                            showCsvPreviewDialog(chosenFile, content);
+                                        }
+                                    });
+                                } catch (final IOException e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            setIoBusy(false);
+                                            Toast.makeText(SettingsActivity.this, "读取文件失败：" + safeMessage(e), Toast.LENGTH_LONG).show();
+                                        }
+                                    });
+                                }
+                            }
+                        });
                     }
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void setIoBusy(boolean busy) {
+        isIoBusy = busy;
+        btnExportCsv.setEnabled(!busy);
+        btnImportCsv.setEnabled(!busy);
+        btnPreviewCsv.setEnabled(!busy);
+        btnSeedDemo.setEnabled(!busy);
+        btnClearAll.setEnabled(!busy);
+    }
+
+    private boolean isUiInvalid() {
+        if (isFinishing()) {
+            return true;
+        }
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed();
+    }
+
+    private static String safeMessage(Throwable t) {
+        String msg = t == null ? null : t.getMessage();
+        return (msg == null || msg.trim().isEmpty()) ? "操作异常" : msg;
     }
 
     private void showCsvPreviewDialog(File file, String content) {

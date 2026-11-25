@@ -105,4 +105,42 @@ public class CsvCodecTest {
             assertTrue(e.getMessage().contains("2"));
         }
     }
+
+    @Test
+    public void parseBills_rejectsUnclosedQuoteAndTrailingGarbage() {
+        String unclosedQuote = CsvCodec.HEADER + "\n1,38.50,0,餐饮,\"未闭合的备注,2026-11-24,,2026-11-24 12:00:00";
+        try {
+            CsvCodec.parseBills(unclosedQuote);
+            fail("Expected IllegalArgumentException for unclosed quote");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("引号"));
+        }
+
+        String trailingCharsAfterQuote = CsvCodec.HEADER + "\n1,38.50,0,餐饮,\"备注\"多出字符,2026-11-24,,2026-11-24 12:00:00\n";
+        try {
+            CsvCodec.parseBills(trailingCharsAfterQuote);
+            fail("Expected IllegalArgumentException for chars after closing quote");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("引号"));
+        }
+    }
+
+    @Test
+    public void parseBills_rejectsTooManyColumnsAndInvalidDate() {
+        String tooManyCols = CsvCodec.HEADER + "\n1,10.00,0,餐饮,午饭,2026-11-24,,2026-11-24 12:00:00,extra_col\n";
+        try {
+            CsvCodec.parseBills(tooManyCols);
+            fail("Expected IllegalArgumentException for >8 columns");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("2"));
+        }
+
+        String badDate = CsvCodec.HEADER + "\n1,10.00,0,餐饮,午饭,2026-02-30,,2026-11-24 12:00:00\n";
+        try {
+            CsvCodec.parseBills(badDate);
+            fail("Expected IllegalArgumentException for invalid date");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("2"));
+        }
+    }
 }

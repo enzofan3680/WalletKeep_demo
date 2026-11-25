@@ -41,14 +41,14 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
 
     @Override
     public void onCreate(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE " + TABLE_CATEGORY + " ("
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_CATEGORY + " ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 + "name TEXT NOT NULL, "
                 + "type INTEGER NOT NULL, "
                 + "icon TEXT, "
                 + "is_default INTEGER DEFAULT 0"
                 + ")");
-        db.execSQL("CREATE TABLE " + TABLE_BILL + " ("
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_BILL + " ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 + "amount REAL NOT NULL, "
                 + "type INTEGER NOT NULL, "
@@ -64,9 +64,11 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_BILL);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_CATEGORY);
-        onCreate(db);
+        // 无损增量升级框架：禁止 DROP TABLE 清空用户历史账单与自定义分类
+        if (oldVersion < 1) {
+            onCreate(db);
+        }
+        // 后续若 DB_VERSION 升级到 2+，在此按版本号顺序执行 ALTER TABLE / 增量建表迁移
     }
 
     private void seedDefaultCategories(SQLiteDatabase db) {

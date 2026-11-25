@@ -51,4 +51,45 @@ public class DateAmountUtilsTest {
         assertEquals(-1.0, DateAmountUtils.parsePositiveAmount("NaN"), 0.001);
         assertEquals(-1.0, DateAmountUtils.parsePositiveAmount("Infinity"), 0.001);
     }
+
+    @Test
+    public void isValidDate_acceptsRealDatesAndRejectsMalformedDates() {
+        assertTrue(DateAmountUtils.isValidDate("2026-11-24"));
+        assertTrue(DateAmountUtils.isValidDate("2024-02-29"));
+        assertEquals(false, DateAmountUtils.isValidDate("2026-02-29"));
+        assertEquals(false, DateAmountUtils.isValidDate("2026-13-01"));
+        assertEquals(false, DateAmountUtils.isValidDate("2026-11-32"));
+        assertEquals(false, DateAmountUtils.isValidDate("not-a-date"));
+        assertEquals(false, DateAmountUtils.isValidDate("2026/11/24"));
+        assertEquals(false, DateAmountUtils.isValidDate(null));
+    }
+
+    @Test
+    public void evaluateBudget_avoidsFloatPrecisionFalseOverBudget() {
+        // 100.10f in IEEE-754 float is 100.0999984741211d; spending exact 100.10 must NOT trigger OVER
+        float budgetFloat = 100.10f;
+        DateAmountUtils.BudgetStatus exactStatus = DateAmountUtils.evaluateBudget(budgetFloat, 100.10d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, exactStatus.level);
+        assertEquals(0L, exactStatus.overCents);
+        assertEquals(0L, exactStatus.remainingCents);
+        assertEquals(100, exactStatus.progressPercent);
+
+        // Summed float drift: 0.10 + 0.20 + 99.80 = 100.10000000000001 -> still 10010 cents, not over
+        double driftedSum = 0.10 + 0.20 + 99.80;
+        DateAmountUtils.BudgetStatus driftedStatus = DateAmountUtils.evaluateBudget(budgetFloat, driftedSum);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, driftedStatus.level);
+        assertEquals(0L, driftedStatus.overCents);
+
+        // Real 1-cent overspend MUST trigger OVER with exact 1 cent
+        DateAmountUtils.BudgetStatus overStatus = DateAmountUtils.evaluateBudget(budgetFloat, 100.11d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_OVER, overStatus.level);
+        assertEquals(1L, overStatus.overCents);
+        assertEquals("¥0.01", DateAmountUtils.formatCents("¥", overStatus.overCents));
+
+        // 80% warning boundary using cents
+        DateAmountUtils.BudgetStatus warnStatus = DateAmountUtils.evaluateBudget(100.0f, 80.0d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, warnStatus.level);
+        DateAmountUtils.BudgetStatus normalStatus = DateAmountUtils.evaluateBudget(100.0f, 79.99d);
+        assertEquals(DateAmountUtils.BudgetStatus.LEVEL_NORMAL, normalStatus.level);
+    }
 }

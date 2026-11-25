@@ -256,15 +256,39 @@ public class BillDao {
         return insertBillsInTransaction(demoBills, new CategoryDao(appContext));
     }
 
+    public static final int IMPORT_MODE_REPLACE = 0;
+    public static final int IMPORT_MODE_DEDUP_APPEND = 1;
+
+    public static final class ImportResult {
+        public final int importedCount;
+        public final int skippedCount;
+
+        public ImportResult(int importedCount, int skippedCount) {
+            this.importedCount = importedCount;
+            this.skippedCount = skippedCount;
+        }
+    }
+
     public int insertBillsInTransaction(List<Bill> bills, CategoryDao categoryDao) {
-        if (bills == null || bills.isEmpty()) {
-            return 0;
+        return importBillsInTransaction(bills, categoryDao, IMPORT_MODE_DEDUP_APPEND).importedCount;
+    }
+
+    public ImportResult importBillsInTransaction(List<Bill> bills, CategoryDao categoryDao, int importMode) {
+        if (bills == null) {
+            return new ImportResult(0, 0);
+        }
+        if (bills.isEmpty() && importMode != IMPORT_MODE_REPLACE) {
+            return new ImportResult(0, 0);
         }
         CategoryDao resolver = (categoryDao != null) ? categoryDao : new CategoryDao(appContext);
         SQLiteDatabase db = dbHelper.getWritableDatabase();
         int insertedCount = 0;
+        int skippedCount = 0;
         db.beginTransaction();
         try {
+            if (importMode == IMPORT_MODE_REPLACE) {
+                db.delete(AccountBookDbHelper.TABLE_BILL, null, null);
+            }
             for (Bill bill : bills) {
                 if (bill == null) {
                     continue;
@@ -280,6 +304,10 @@ public class BillDao {
                 if (bill.getBillDate() == null || bill.getBillDate().trim().isEmpty()) {
                     bill.setBillDate(DateAmountUtils.getCurrentDate());
                 }
+                if (importMode == IMPORT_MODE_DEDUP_APPEND && existsDuplicateBill(db, bill)) {
+                    skippedCount++;
+                    continue;
+                }
                 long rowId = db.insertOrThrow(AccountBookDbHelper.TABLE_BILL, null, buildContentValues(bill, true));
                 bill.setId(rowId);
                 insertedCount++;
@@ -288,7 +316,34 @@ public class BillDao {
         } finally {
             db.endTransaction();
         }
-        return insertedCount;
+        return new ImportResult(insertedCount, skippedCount);
+    }
+
+    private boolean existsDuplicateBill(SQLiteDatabase db, Bill bill) {
+        Cursor cursor = null;
+        try {
+            String note = bill.getNote() == null ? "" : bill.getNote();
+            String createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
+            cursor = db.rawQuery(
+                    "SELECT id FROM " + AccountBookDbHelper.TABLE_BILL
+                            + " WHERE bill_date = ? AND type = ? AND ABS(amount - ?) < 0.005"
+                            + " AND category_id = ? AND IFNULL(note, '') = ? AND IFNULL(created_at, '') = ?"
+                            + " LIMIT 1",
+                    new String[]{
+                            bill.getBillDate(),
+                            String.valueOf(bill.getType()),
+                            String.valueOf(bill.getAmount()),
+                            String.valueOf(bill.getCategoryId()),
+                            note,
+                            createdAt
+                    }
+            );
+            return cursor.moveToFirst();
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
     }
 
     private List<Bill> queryWithRawSql(String sql, String[] selectionArgs) {
