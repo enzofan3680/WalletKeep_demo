@@ -407,8 +407,8 @@ public class BillListActivity extends AppCompatActivity {
         }
 
         tvFilterCount.setText(String.format(Locale.CHINA, "共 %d 笔", bills.size()));
-        tvFilterExpense.setText("支出 " + DateAmountUtils.formatAmount(currency, totalExpense));
-        tvFilterIncome.setText("收入 " + DateAmountUtils.formatAmount(currency, totalIncome));
+        tvFilterExpense.setText(getString(R.string.fmt_filter_expense, DateAmountUtils.formatAmount(currency, totalExpense)));
+        tvFilterIncome.setText(getString(R.string.fmt_filter_income, DateAmountUtils.formatAmount(currency, totalIncome)));
 
         if (bills.isEmpty()) {
             lvBills.setVisibility(View.GONE);

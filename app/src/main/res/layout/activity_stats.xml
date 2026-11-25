@@ -28,11 +28,11 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:paddingLeft="12dp"
+                android:paddingStart="12dp"
                 android:paddingTop="8dp"
-                android:paddingRight="12dp"
+                android:paddingEnd="12dp"
                 android:paddingBottom="8dp"
-                android:text="&lt; 上月"
+                android:text="@string/action_prev_month"
                 android:textColor="@color/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -43,7 +43,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="2026年11月"
+                android:text="@string/placeholder_stats_month"
                 android:textColor="@color/textPrimary"
                 android:textSize="18sp"
                 android:textStyle="bold" />
@@ -56,11 +56,11 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:paddingLeft="12dp"
+                android:paddingStart="12dp"
                 android:paddingTop="8dp"
-                android:paddingRight="12dp"
+                android:paddingEnd="12dp"
                 android:paddingBottom="8dp"
-                android:text="下月 &gt;"
+                android:text="@string/action_next_month"
                 android:textColor="@color/colorPrimary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -90,7 +90,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="本月支出"
+                        android:text="@string/label_month_expense"
                         android:textColor="#CCFFFFFF"
                         android:textSize="12sp" />
 
@@ -101,7 +101,7 @@
                         android:layout_marginTop="4dp"
                         android:ellipsize="end"
                         android:singleLine="true"
-                        android:text="¥0.00"
+                        android:text="@string/placeholder_amount_zero"
                         android:textColor="@color/textOnPrimary"
                         android:textSize="17sp"
                         android:textStyle="bold" />
@@ -111,14 +111,13 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:layout_marginLeft="8dp"
                     android:layout_weight="1"
                     android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="本月收入"
+                        android:text="@string/label_month_income"
                         android:textColor="#CCFFFFFF"
                         android:textSize="12sp" />
 
@@ -129,7 +128,7 @@
                         android:layout_marginTop="4dp"
                         android:ellipsize="end"
                         android:singleLine="true"
-                        android:text="¥0.00"
+                        android:text="@string/placeholder_amount_zero"
                         android:textColor="@color/textOnPrimary"
                         android:textSize="17sp"
                         android:textStyle="bold" />
@@ -139,14 +138,13 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:layout_marginLeft="8dp"
                     android:layout_weight="1"
                     android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="本月结余"
+                        android:text="@string/label_month_balance"
                         android:textColor="#CCFFFFFF"
                         android:textSize="12sp" />
 
@@ -157,7 +155,7 @@
                         android:layout_marginTop="4dp"
                         android:ellipsize="end"
                         android:singleLine="true"
-                        android:text="¥0.00"
+                        android:text="@string/placeholder_amount_zero"
                         android:textColor="@color/textOnPrimary"
                         android:textSize="17sp"
                         android:textStyle="bold" />
@@ -175,7 +173,7 @@
                 android:id="@+id/tv_stats_budget_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="未设置月度预算"
+                android:text="@string/label_budget_unset"
                 android:textColor="@color/textOnPrimary"
                 android:textSize="13sp" />
 
@@ -203,11 +201,10 @@
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_marginEnd="6dp"
-                android:layout_marginRight="6dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_tab_selected"
                 android:gravity="center"
-                android:text="支出构成"
+                android:text="@string/tab_expense_breakdown"
                 android:textColor="@color/textOnPrimary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -219,7 +216,7 @@
                 android:layout_weight="1"
                 android:background="@drawable/bg_tab_unselected"
                 android:gravity="center"
-                android:text="收入构成"
+                android:text="@string/tab_income_breakdown"
                 android:textColor="@color/textSecondary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -237,7 +234,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="分类占比可视化图表"
+                android:text="@string/label_category_chart"
                 android:textColor="@color/textPrimary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -261,7 +258,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="分类明细排行"
+                android:text="@string/label_category_ranking"
                 android:textColor="@color/textPrimary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -285,7 +282,7 @@
                 android:gravity="center"
                 android:paddingTop="24dp"
                 android:paddingBottom="24dp"
-                android:text="本月暂无该类型账单统计"
+                android:text="@string/empty_stats_month"
                 android:textColor="@color/textSecondary"
                 android:textSize="14sp"
                 android:visibility="gone" />

@@ -1,8 +1,110 @@
-<resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 应用与页面标题 -->
     <string name="app_name">记账小助手</string>
     <string name="title_add_bill">记一笔</string>
     <string name="title_edit_bill">编辑账单</string>
     <string name="title_bill_list">账单明细</string>
     <string name="title_stats">收支统计</string>
     <string name="title_settings">预算与备份设置</string>
+
+    <!-- 通用文案 -->
+    <string name="label_expense">支出</string>
+    <string name="label_income">收入</string>
+    <string name="label_amount">金额</string>
+    <string name="label_note">备注</string>
+    <string name="label_month_expense">本月支出</string>
+    <string name="label_month_income">本月收入</string>
+    <string name="label_month_income_spaced">本月收入&#160;</string>
+    <string name="label_month_balance">本月结余</string>
+    <string name="label_month_balance_spaced">本月结余&#160;</string>
+    <string name="symbol_default_currency">¥</string>
+    <string name="placeholder_amount_zero">¥0.00</string>
+    <string name="hint_amount_zero">0.00</string>
+    <string name="symbol_prev">&lt;</string>
+    <string name="symbol_next">&gt;</string>
+    <string name="symbol_plus">+</string>
+
+    <!-- 首页 (MainActivity) -->
+    <string name="placeholder_home_month">2026年11月 收支总览</string>
+    <string name="placeholder_budget_remaining">剩余预算：¥3000.00</string>
+    <string name="placeholder_budget_total">预算 ¥3000.00</string>
+    <string name="nav_icon_add">记</string>
+    <string name="nav_icon_list">账</string>
+    <string name="nav_icon_stats">统</string>
+    <string name="nav_icon_settings">设</string>
+    <string name="nav_label_settings">预算备份</string>
+    <string name="label_recent_bills">最近账单</string>
+    <string name="action_view_all">查看全部 &gt;</string>
+    <string name="empty_home_bills">暂无账单记录，点击右下角 + 记一笔吧！</string>
+
+    <!-- 记账/编辑页 (AddEditBillActivity) -->
+    <string name="label_select_category">选择分类</string>
+    <string name="hint_long_press_delete_category">长按自定义分类可删除</string>
+    <string name="action_add_category">+ 新增分类</string>
+    <string name="label_bill_date">账单日期</string>
+    <string name="placeholder_bill_date" tools:ignore="TypographyDashes">2026-01-01</string>
+    <string name="action_modify_date">修改 &gt;</string>
+    <string name="hint_bill_note">填写消费或收入备注（选填）</string>
+    <string name="label_receipt_section">票据/小票图片（私有文件存储）</string>
+    <string name="action_pick_receipt">选择图片</string>
+    <string name="desc_receipt_thumb">票据图片缩略图</string>
+    <string name="hint_tap_receipt_zoom">点击缩略图可查看大图</string>
+    <string name="action_remove_receipt">移除图片</string>
+    <string name="action_save_bill">保存账单</string>
+    <string name="action_delete_bill">删除该账单</string>
+
+    <!-- 账单明细页 (BillListActivity) -->
+    <string name="hint_search_bills">搜索备注或分类关键词…</string>
+    <string name="action_clear">清除</string>
+    <string name="placeholder_filter_count">共 0 笔</string>
+    <string name="placeholder_filter_expense">支出 ¥0.00</string>
+    <string name="placeholder_filter_income">收入 ¥0.00</string>
+    <string name="empty_filtered_bills">未找到符合条件的账单记录</string>
+
+    <!-- 统计页 (StatsActivity) -->
+    <string name="action_prev_month">&lt; 上月</string>
+    <string name="action_next_month">下月 &gt;</string>
+    <string name="placeholder_stats_month">2026年11月</string>
+    <string name="label_budget_unset">未设置月度预算</string>
+    <string name="tab_expense_breakdown">支出构成</string>
+    <string name="tab_income_breakdown">收入构成</string>
+    <string name="label_category_chart">分类占比可视化图表</string>
+    <string name="label_category_ranking">分类明细排行</string>
+    <string name="empty_stats_month">本月暂无该类型账单统计</string>
+
+    <!-- 设置与备份页 (SettingsActivity) -->
+    <string name="section_budget_prefs">预算与偏好设置</string>
+    <string name="label_monthly_budget_desc">月度支出预算（设为 0 表示关闭预算限制）</string>
+    <string name="hint_monthly_budget">例如 3000.00</string>
+    <string name="action_save_budget">保存预算</string>
+    <string name="label_budget_reminder_switch" formatted="false">开启预算 80%/100% 预警提示</string>
+    <string name="label_default_currency">默认显示币种</string>
+    <string name="currency_option_cny">¥ 人民币</string>
+    <string name="currency_option_usd">$ 美元</string>
+    <string name="currency_option_eur">€ 欧元</string>
+    <string name="label_dark_theme_switch">深色夜间模式</string>
+    <string name="section_csv_backup">数据备份与恢复（CSV 私有存储）</string>
+    <string name="placeholder_backup_info">私有目录已保存 0 个 CSV 备份文件</string>
+    <string name="action_export_csv">导出全部账单为 CSV 文件</string>
+    <string name="action_import_csv">从 CSV 备份文件恢复账单</string>
+    <string name="action_preview_csv">查看/预览 CSV 备份文件内容</string>
+    <string name="section_demo_reset">演示数据与数据重置</string>
+    <string name="action_seed_demo">补充生成示例账单（10笔）</string>
+    <string name="action_clear_all">清空全部账单与票据图片</string>
+
+    <!-- 列表项标签 -->
+    <string name="tag_receipt">票据</string>
+    <string name="tag_custom_category">自定义</string>
+
+    <!-- 动态格式化文本（消除 SetTextI18n） -->
+    <string name="fmt_receipt_name_path">%1$s\n%2$s</string>
+    <string name="fmt_receipt_storage_path">存储路径：%1$s</string>
+    <string name="fmt_filter_expense">支出 %1$s</string>
+    <string name="fmt_filter_income">收入 %1$s</string>
+    <string name="fmt_home_month_overview">%1$s 收支总览</string>
+    <string name="fmt_budget_total">预算 %1$s</string>
+    <string name="fmt_budget_over">本月已超支：%1$s！</string>
+    <string name="fmt_budget_warning">预算即将用尽（已用 %1$.0f%%）</string>
+    <string name="fmt_budget_remaining">剩余预算：%1$s</string>
 </resources>

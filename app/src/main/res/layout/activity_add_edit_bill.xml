@@ -24,11 +24,10 @@
                 android:layout_width="0dp"
                 android:layout_height="40dp"
                 android:layout_marginEnd="6dp"
-                android:layout_marginRight="6dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_tab_selected"
                 android:gravity="center"
-                android:text="支出"
+                android:text="@string/label_expense"
                 android:textColor="@color/textOnPrimary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -40,7 +39,7 @@
                 android:layout_weight="1"
                 android:background="@drawable/bg_tab_unselected"
                 android:gravity="center"
-                android:text="收入"
+                android:text="@string/label_income"
                 android:textColor="@color/textSecondary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -58,7 +57,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="金额"
+                android:text="@string/label_amount"
                 android:textColor="@color/textSecondary"
                 android:textSize="13sp" />
 
@@ -69,9 +68,9 @@
                 android:background="@drawable/bg_input"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingLeft="12dp"
+                android:paddingStart="12dp"
                 android:paddingTop="8dp"
-                android:paddingRight="12dp"
+                android:paddingEnd="12dp"
                 android:paddingBottom="8dp">
 
                 <TextView
@@ -79,8 +78,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
-                    android:layout_marginRight="8dp"
-                    android:text="¥"
+                    android:text="@string/symbol_default_currency"
                     android:textColor="@color/textPrimary"
                     android:textSize="24sp"
                     android:textStyle="bold" />
@@ -91,7 +89,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:background="@android:color/transparent"
-                    android:hint="0.00"
+                    android:hint="@string/hint_amount_zero"
                     android:imeOptions="actionDone"
                     android:importantForAutofill="no"
                     android:inputType="numberDecimal"
@@ -129,7 +127,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="选择分类"
+                        android:text="@string/label_select_category"
                         android:textColor="@color/textPrimary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -138,7 +136,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="长按自定义分类可删除"
+                        android:text="@string/hint_long_press_delete_category"
                         android:textColor="@color/textSecondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -150,11 +148,11 @@
                     android:background="@drawable/bg_button_outline"
                     android:clickable="true"
                     android:focusable="true"
-                    android:paddingLeft="12dp"
+                    android:paddingStart="12dp"
                     android:paddingTop="6dp"
-                    android:paddingRight="12dp"
+                    android:paddingEnd="12dp"
                     android:paddingBottom="6dp"
-                    android:text="+ 新增分类"
+                    android:text="@string/action_add_category"
                     android:textColor="@color/colorPrimary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
@@ -197,7 +195,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="账单日期"
+                    android:text="@string/label_bill_date"
                     android:textColor="@color/textPrimary"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -206,7 +204,7 @@
                     android:id="@+id/tv_bill_date"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="2026-01-01"
+                    android:text="@string/placeholder_bill_date"
                     android:textColor="@color/textPrimary"
                     android:textSize="15sp" />
 
@@ -214,8 +212,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:layout_marginLeft="8dp"
-                    android:text="修改 &gt;"
+                    android:text="@string/action_modify_date"
                     android:textColor="@color/colorPrimary"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -230,7 +227,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="备注"
+                android:text="@string/label_note"
                 android:textColor="@color/textSecondary"
                 android:textSize="13sp" />
 
@@ -241,7 +238,7 @@
                 android:layout_marginTop="8dp"
                 android:background="@drawable/bg_input"
                 android:gravity="top|start"
-                android:hint="填写消费或收入备注（选填）"
+                android:hint="@string/hint_bill_note"
                 android:importantForAutofill="no"
                 android:inputType="textMultiLine|textCapSentences"
                 android:maxLength="120"
@@ -273,9 +270,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
-                    android:layout_marginRight="8dp"
                     android:layout_weight="1"
-                    android:text="票据/小票图片（私有文件存储）"
+                    android:text="@string/label_receipt_section"
                     android:textColor="@color/textPrimary"
                     android:textSize="14sp"
                     android:textStyle="bold" />
@@ -287,11 +283,11 @@
                     android:background="@drawable/bg_button_outline"
                     android:clickable="true"
                     android:focusable="true"
-                    android:paddingLeft="12dp"
+                    android:paddingStart="12dp"
                     android:paddingTop="6dp"
-                    android:paddingRight="12dp"
+                    android:paddingEnd="12dp"
                     android:paddingBottom="6dp"
-                    android:text="选择图片"
+                    android:text="@string/action_pick_receipt"
                     android:textColor="@color/colorPrimary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
@@ -312,7 +308,7 @@
                     android:layout_height="120dp"
                     android:background="@drawable/bg_input"
                     android:clickable="true"
-                    android:contentDescription="票据图片缩略图"
+                    android:contentDescription="@string/desc_receipt_thumb"
                     android:focusable="true"
                     android:scaleType="centerCrop" />
 
@@ -320,7 +316,6 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="12dp"
-                    android:layout_marginLeft="12dp"
                     android:layout_weight="1"
                     android:orientation="vertical">
 
@@ -337,7 +332,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="点击缩略图可查看大图"
+                        android:text="@string/hint_tap_receipt_zoom"
                         android:textColor="@color/textSecondary"
                         android:textSize="12sp" />
 
@@ -349,11 +344,11 @@
                         android:background="@drawable/bg_button_outline"
                         android:clickable="true"
                         android:focusable="true"
-                        android:paddingLeft="12dp"
+                        android:paddingStart="12dp"
                         android:paddingTop="6dp"
-                        android:paddingRight="12dp"
+                        android:paddingEnd="12dp"
                         android:paddingBottom="6dp"
-                        android:text="移除图片"
+                        android:text="@string/action_remove_receipt"
                         android:textColor="@color/colorDanger"
                         android:textSize="12sp"
                         android:textStyle="bold" />
@@ -368,7 +363,7 @@
             android:layout_height="48dp"
             android:layout_marginTop="20dp"
             android:background="@drawable/bg_button_primary"
-            android:text="保存账单"
+            android:text="@string/action_save_bill"
             android:textColor="@color/textOnPrimary"
             android:textSize="16sp"
             android:textStyle="bold" />
@@ -380,7 +375,7 @@
             android:layout_marginTop="12dp"
             android:layout_marginBottom="8dp"
             android:background="@drawable/bg_button_danger"
-            android:text="删除该账单"
+            android:text="@string/action_delete_bill"
             android:textColor="@color/textOnPrimary"
             android:textSize="16sp"
             android:textStyle="bold"

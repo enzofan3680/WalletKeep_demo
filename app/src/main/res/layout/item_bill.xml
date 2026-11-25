@@ -51,7 +51,7 @@
                 android:paddingTop="2dp"
                 android:paddingEnd="6dp"
                 android:paddingBottom="2dp"
-                android:text="票据"
+                android:text="@string/tag_receipt"
                 android:textColor="@color/colorPrimary"
                 android:textSize="12sp"
                 android:visibility="gone" />

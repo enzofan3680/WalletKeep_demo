@@ -616,7 +616,7 @@ public class AddEditBillActivity extends AppCompatActivity {
         if (thumb != null) {
             ivReceiptThumb.setImageBitmap(thumb);
             File file = new File(path);
-            tvReceiptPath.setText(file.getName() + "\n" + path);
+            tvReceiptPath.setText(getString(R.string.fmt_receipt_name_path, file.getName(), path));
         } else {
             ivReceiptThumb.setImageResource(android.R.drawable.ic_menu_report_image);
             tvReceiptPath.setText("原票据文件不存在");
@@ -657,7 +657,7 @@ public class AddEditBillActivity extends AppCompatActivity {
         container.addView(imageView, imgParams);
 
         TextView pathView = new TextView(this);
-        pathView.setText("存储路径：" + currentReceiptPath);
+        pathView.setText(getString(R.string.fmt_receipt_storage_path, currentReceiptPath));
         pathView.setTextColor(ContextCompat.getColor(this, R.color.textSecondary));
         pathView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(

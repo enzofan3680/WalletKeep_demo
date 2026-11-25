@@ -227,7 +227,7 @@ public class MainActivity extends AppCompatActivity {
         float monthlyBudget = prefsManager.getMonthlyBudget();
         boolean reminderEnabled = prefsManager.isReminderEnabled();
 
-        tvHomeMonth.setText(formatMonthLabel(currentMonth) + " 收支总览");
+        tvHomeMonth.setText(getString(R.string.fmt_home_month_overview, formatMonthLabel(currentMonth)));
 
         double monthExpense = billDao.getMonthlyTotal(currentMonth, Category.TYPE_EXPENSE);
         double monthIncome = billDao.getMonthlyTotal(currentMonth, Category.TYPE_INCOME);
@@ -266,18 +266,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
         tvHomeBudgetTotal.setVisibility(View.VISIBLE);
-        tvHomeBudgetTotal.setText("预算 " + DateAmountUtils.formatCents(currency, status.budgetCents));
+        tvHomeBudgetTotal.setText(getString(R.string.fmt_budget_total, DateAmountUtils.formatCents(currency, status.budgetCents)));
         pbHomeBudget.setProgress(status.progressPercent);
 
         int progressColor;
         if (status.level == DateAmountUtils.BudgetStatus.LEVEL_OVER && reminderEnabled) {
-            tvHomeBudgetLabel.setText("本月已超支：" + DateAmountUtils.formatCents(currency, status.overCents) + "！");
+            tvHomeBudgetLabel.setText(getString(R.string.fmt_budget_over, DateAmountUtils.formatCents(currency, status.overCents)));
             progressColor = ContextCompat.getColor(this, R.color.colorDanger);
         } else if (status.level == DateAmountUtils.BudgetStatus.LEVEL_WARNING && reminderEnabled) {
-            tvHomeBudgetLabel.setText("预算即将用尽（已用 " + String.format(Locale.CHINA, "%.0f%%", status.usagePercent) + "）");
+            tvHomeBudgetLabel.setText(getString(R.string.fmt_budget_warning, status.usagePercent));
             progressColor = ContextCompat.getColor(this, R.color.colorWarning);
         } else {
-            tvHomeBudgetLabel.setText("剩余预算：" + DateAmountUtils.formatCents(currency, status.remainingCents));
+            tvHomeBudgetLabel.setText(getString(R.string.fmt_budget_remaining, DateAmountUtils.formatCents(currency, status.remainingCents)));
             progressColor = ContextCompat.getColor(this, R.color.colorSafe);
         }
         applyBudgetProgressColors(progressColor);
