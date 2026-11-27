@@ -8,6 +8,10 @@
 
 **Tech Stack:** Java 8 (`D:\android-studio-ide\jre`), Android Gradle Plugin `3.6.3`, Gradle `5.6.4`, `compileSdkVersion 29`, `buildToolsVersion "28.0.3"`, `minSdkVersion 17`, `targetSdkVersion 29`, `androidx.appcompat:appcompat:1.0.2`, `androidx.constraintlayout:constraintlayout:1.1.3`, `junit:junit:4.12`.
 
+> **环境说明（2026-11-25 更新）**
+> 本计划中的 Tech Stack 与所有 `D:\26term-android-homework\WalletKeep_demo` 路径均为最初课程设计环境。
+> 当前仓库已升级为 JDK 21 / AGP 9.3.0 / Gradle 9.5.0 / compileSdk 37 / targetSdk 34 / minSdk 24，完整差异、原因与回退方式见根目录 `README.md` 的「环境差异声明」。本计划仅作为原始实施记录保留。
+
 ## Global Constraints
 
 - Project root: `D:\26term-android-homework\WalletKeep_demo`

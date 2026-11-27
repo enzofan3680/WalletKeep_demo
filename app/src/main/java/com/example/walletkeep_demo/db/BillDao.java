@@ -13,8 +13,10 @@ import com.example.walletkeep_demo.util.DateAmountUtils;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -22,7 +24,7 @@ import java.util.Set;
  */
 public class BillDao {
     private static final String SELECT_BILL_WITH_CATEGORY =
-            "SELECT b.id, b.amount, b.type, b.category_id, b.note, b.bill_date, b.receipt_path, b.created_at, "
+            "SELECT b.id, b.amount_cents, b.type, b.category_id, b.note, b.bill_date, b.receipt_path, b.created_at, "
                     + "c.name AS category_name, c.icon AS category_icon "
                     + "FROM " + AccountBookDbHelper.TABLE_BILL + " b "
                     + "LEFT JOIN " + AccountBookDbHelper.TABLE_CATEGORY + " c ON b.category_id = c.id";
@@ -127,8 +129,8 @@ public class BillDao {
             args.add(String.valueOf(categoryId));
         }
         if (keyword != null && !keyword.trim().isEmpty()) {
-            String pattern = "%" + keyword.trim() + "%";
-            conditions.add("(b.note LIKE ? OR c.name LIKE ?)");
+            String pattern = "%" + escapeLikePattern(keyword.trim()) + "%";
+            conditions.add("(b.note LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\')");
             args.add(pattern);
             args.add(pattern);
         }
@@ -154,17 +156,17 @@ public class BillDao {
             String sql;
             String[] args;
             if (monthPrefix != null && !monthPrefix.trim().isEmpty()) {
-                sql = "SELECT IFNULL(SUM(amount), 0) FROM " + AccountBookDbHelper.TABLE_BILL
+                sql = "SELECT IFNULL(SUM(amount_cents), 0) FROM " + AccountBookDbHelper.TABLE_BILL
                         + " WHERE type = ? AND bill_date LIKE ?";
                 args = new String[]{String.valueOf(type), monthPrefix.trim() + "%"};
             } else {
-                sql = "SELECT IFNULL(SUM(amount), 0) FROM " + AccountBookDbHelper.TABLE_BILL
+                sql = "SELECT IFNULL(SUM(amount_cents), 0) FROM " + AccountBookDbHelper.TABLE_BILL
                         + " WHERE type = ?";
                 args = new String[]{String.valueOf(type)};
             }
             cursor = db.rawQuery(sql, args);
             if (cursor.moveToFirst()) {
-                return cursor.getDouble(0);
+                return cursor.getLong(0) / 100.0;
             }
             return 0.0;
         } finally {
@@ -182,7 +184,7 @@ public class BillDao {
         try {
             StringBuilder sql = new StringBuilder();
             sql.append("SELECT b.category_id, c.name AS category_name, c.icon AS category_icon, ")
-                    .append("COUNT(b.id) AS bill_count, IFNULL(SUM(b.amount), 0) AS total_amount ")
+                    .append("COUNT(b.id) AS bill_count, IFNULL(SUM(b.amount_cents), 0) AS total_amount_cents ")
                     .append("FROM ").append(AccountBookDbHelper.TABLE_BILL).append(" b ")
                     .append("INNER JOIN ").append(AccountBookDbHelper.TABLE_CATEGORY)
                     .append(" c ON b.category_id = c.id ")
@@ -194,7 +196,7 @@ public class BillDao {
                 sql.append(" AND b.bill_date LIKE ?");
                 args.add(monthPrefix.trim() + "%");
             }
-            sql.append(" GROUP BY b.category_id, c.name, c.icon ORDER BY total_amount DESC");
+            sql.append(" GROUP BY b.category_id, c.name, c.icon ORDER BY total_amount_cents DESC");
 
             cursor = db.rawQuery(sql.toString(), args.toArray(new String[0]));
             while (cursor.moveToNext()) {
@@ -202,7 +204,7 @@ public class BillDao {
                 String categoryName = cursor.getString(cursor.getColumnIndexOrThrow("category_name"));
                 String categoryIcon = cursor.getString(cursor.getColumnIndexOrThrow("category_icon"));
                 int billCount = cursor.getInt(cursor.getColumnIndexOrThrow("bill_count"));
-                double itemTotal = cursor.getDouble(cursor.getColumnIndexOrThrow("total_amount"));
+                double itemTotal = cursor.getLong(cursor.getColumnIndexOrThrow("total_amount_cents")) / 100.0;
                 totalSum += itemTotal;
                 stats.add(new CategoryStat(categoryId, categoryName, categoryIcon, billCount, itemTotal, 0.0));
             }
@@ -246,6 +248,28 @@ public class BillDao {
     public int deleteAllBills() {
         SQLiteDatabase db = dbHelper.getWritableDatabase();
         return db.delete(AccountBookDbHelper.TABLE_BILL, null, null);
+    }
+
+    /**
+     * 统计仍引用指定票据路径的账单数量，用于删除账单前判断票据文件是否可安全清理。
+     */
+    public int countBillsByReceiptPath(String receiptPath) {
+        if (receiptPath == null || receiptPath.trim().isEmpty()) {
+            return 0;
+        }
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        Cursor cursor = null;
+        try {
+            cursor = db.rawQuery(
+                    "SELECT COUNT(*) FROM " + AccountBookDbHelper.TABLE_BILL + " WHERE receipt_path = ?",
+                    new String[]{receiptPath.trim()}
+            );
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
     }
 
     public int seedDemoBills() {
@@ -329,6 +353,9 @@ public class BillDao {
         int skippedCount = 0;
         int updatedReceiptCount = 0;
         Set<String> attachedReceiptPaths = new HashSet<String>();
+        Map<DuplicateKey, List<ExistingBillMatch>> existingMatches =
+                new HashMap<DuplicateKey, List<ExistingBillMatch>>();
+        Map<DuplicateKey, Integer> consumedMatches = new HashMap<DuplicateKey, Integer>();
         db.beginTransaction();
         try {
             if (importMode == IMPORT_MODE_REPLACE) {
@@ -353,8 +380,18 @@ public class BillDao {
                 bill.setReceiptPath(incomingReceipt);
 
                 if (importMode == IMPORT_MODE_DEDUP_APPEND) {
-                    ExistingBillMatch match = findDuplicateBill(db, bill);
-                    if (match != null) {
+                    // 按“内容 + 出现次数”判重：备份里有 2 条完全相同的账单、
+                    // 库里只有 1 条时，应补回第 2 条，而不是两条都跳过。
+                    DuplicateKey key = new DuplicateKey(bill);
+                    List<ExistingBillMatch> matches = existingMatches.get(key);
+                    if (matches == null) {
+                        matches = findMatchingBills(db, key);
+                        existingMatches.put(key, matches);
+                    }
+                    int used = consumedMatches.containsKey(key) ? consumedMatches.get(key) : 0;
+                    if (used < matches.size()) {
+                        ExistingBillMatch match = matches.get(used);
+                        consumedMatches.put(key, used + 1);
                         skippedCount++;
                         String existingReceipt = match.receiptPath == null ? "" : match.receiptPath.trim();
                         boolean existingValid = !existingReceipt.isEmpty() && new File(existingReceipt).isFile();
@@ -393,36 +430,85 @@ public class BillDao {
         return new ImportResult(insertedCount, skippedCount, updatedReceiptCount, attachedReceiptPaths);
     }
 
-    private ExistingBillMatch findDuplicateBill(SQLiteDatabase db, Bill bill) {
+    private List<ExistingBillMatch> findMatchingBills(SQLiteDatabase db, DuplicateKey key) {
+        List<ExistingBillMatch> matches = new ArrayList<ExistingBillMatch>();
         Cursor cursor = null;
         try {
-            String note = bill.getNote() == null ? "" : bill.getNote();
-            String createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
             cursor = db.rawQuery(
                     "SELECT id, receipt_path FROM " + AccountBookDbHelper.TABLE_BILL
-                            + " WHERE bill_date = ? AND type = ? AND ABS(amount - ?) < 0.005"
+                            + " WHERE bill_date = ? AND type = ? AND amount_cents = ?"
                             + " AND category_id = ? AND IFNULL(note, '') = ? AND IFNULL(created_at, '') = ?"
-                            + " LIMIT 1",
+                            + " ORDER BY id",
                     new String[]{
-                            bill.getBillDate(),
-                            String.valueOf(bill.getType()),
-                            String.valueOf(bill.getAmount()),
-                            String.valueOf(bill.getCategoryId()),
-                            note,
-                            createdAt
+                            key.billDate,
+                            String.valueOf(key.type),
+                            String.valueOf(key.amountCents),
+                            String.valueOf(key.categoryId),
+                            key.note,
+                            key.createdAt
                     }
             );
-            if (cursor.moveToFirst()) {
-                long id = cursor.getLong(0);
-                String receiptPath = cursor.getString(1);
-                return new ExistingBillMatch(id, receiptPath);
+            while (cursor.moveToNext()) {
+                matches.add(new ExistingBillMatch(cursor.getLong(0), cursor.getString(1)));
             }
-            return null;
         } finally {
             if (cursor != null) {
                 cursor.close();
             }
         }
+        return matches;
+    }
+
+    private static final class DuplicateKey {
+        final String billDate;
+        final int type;
+        final long amountCents;
+        final long categoryId;
+        final String note;
+        final String createdAt;
+
+        DuplicateKey(Bill bill) {
+            this.billDate = bill.getBillDate() == null ? "" : bill.getBillDate();
+            this.type = bill.getType();
+            this.amountCents = DateAmountUtils.toCents(bill.getAmount());
+            this.categoryId = bill.getCategoryId();
+            this.note = bill.getNote() == null ? "" : bill.getNote();
+            this.createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof DuplicateKey)) {
+                return false;
+            }
+            DuplicateKey other = (DuplicateKey) o;
+            return type == other.type
+                    && amountCents == other.amountCents
+                    && categoryId == other.categoryId
+                    && billDate.equals(other.billDate)
+                    && note.equals(other.note)
+                    && createdAt.equals(other.createdAt);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = billDate.hashCode();
+            result = 31 * result + type;
+            result = 31 * result + (int) (amountCents ^ (amountCents >>> 32));
+            result = 31 * result + (int) (categoryId ^ (categoryId >>> 32));
+            result = 31 * result + note.hashCode();
+            result = 31 * result + createdAt.hashCode();
+            return result;
+        }
+    }
+
+    private static String escapeLikePattern(String input) {
+        return input.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private List<Bill> queryWithRawSql(String sql, String[] selectionArgs) {
@@ -443,8 +529,12 @@ public class BillDao {
     }
 
     private ContentValues buildContentValues(Bill bill, boolean includeCreatedAt) {
+        long amountCents = DateAmountUtils.toCents(bill.getAmount());
+        if (!DateAmountUtils.isAmountWithinRange(amountCents)) {
+            throw new IllegalArgumentException("金额超出允许范围: " + bill.getAmount());
+        }
         ContentValues values = new ContentValues();
-        values.put("amount", bill.getAmount());
+        values.put("amount_cents", amountCents);
         values.put("type", bill.getType());
         values.put("category_id", bill.getCategoryId());
         values.put("note", bill.getNote());
@@ -471,7 +561,7 @@ public class BillDao {
     private Bill billFromCursor(Cursor cursor) {
         Bill bill = new Bill();
         bill.setId(cursor.getLong(cursor.getColumnIndexOrThrow("id")));
-        bill.setAmount(cursor.getDouble(cursor.getColumnIndexOrThrow("amount")));
+        bill.setAmount(cursor.getLong(cursor.getColumnIndexOrThrow("amount_cents")) / 100.0);
         bill.setType(cursor.getInt(cursor.getColumnIndexOrThrow("type")));
         bill.setCategoryId(cursor.getLong(cursor.getColumnIndexOrThrow("category_id")));
         bill.setNote(cursor.getString(cursor.getColumnIndexOrThrow("note")));

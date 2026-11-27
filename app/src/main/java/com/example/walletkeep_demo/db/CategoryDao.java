@@ -3,9 +3,11 @@ package com.example.walletkeep_demo.db;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteConstraintException;
 import android.database.sqlite.SQLiteDatabase;
 
 import com.example.walletkeep_demo.model.Category;
+import com.example.walletkeep_demo.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -122,7 +124,7 @@ public class CategoryDao {
         ContentValues values = new ContentValues();
         values.put("name", trimmed);
         values.put("type", type);
-        values.put("icon", trimmed.substring(0, 1));
+        values.put("icon", StringUtils.firstCodePointOr(trimmed, "类"));
         values.put("is_default", 0);
         return db.insert(AccountBookDbHelper.TABLE_CATEGORY, null, values);
     }
@@ -142,7 +144,7 @@ public class CategoryDao {
         ContentValues values = new ContentValues();
         values.put("name", trimmed);
         values.put("type", type);
-        values.put("icon", trimmed.substring(0, 1));
+        values.put("icon", StringUtils.firstCodePointOr(trimmed, "类"));
         values.put("is_default", 0);
         return db.insert(AccountBookDbHelper.TABLE_CATEGORY, null, values);
     }
@@ -172,12 +174,17 @@ public class CategoryDao {
             }
         }
 
-        int deleted = db.delete(
-                AccountBookDbHelper.TABLE_CATEGORY,
-                "id = ?",
-                new String[]{String.valueOf(categoryId)}
-        );
-        return deleted > 0 ? DELETE_OK : DELETE_ERR_NOT_FOUND;
+        try {
+            int deleted = db.delete(
+                    AccountBookDbHelper.TABLE_CATEGORY,
+                    "id = ?",
+                    new String[]{String.valueOf(categoryId)}
+            );
+            return deleted > 0 ? DELETE_OK : DELETE_ERR_NOT_FOUND;
+        } catch (SQLiteConstraintException e) {
+            // count 与 delete 之间被并发插入了引用该分类的账单时，外键会拒绝删除
+            return DELETE_ERR_IN_USE;
+        }
     }
 
     private Category findByNameAndType(SQLiteDatabase db, String name, int type) {

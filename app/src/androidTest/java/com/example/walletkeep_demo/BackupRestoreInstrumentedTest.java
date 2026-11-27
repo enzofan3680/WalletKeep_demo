@@ -3,6 +3,7 @@ package com.example.walletkeep_demo;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.SharedPreferences;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Build;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -225,6 +227,109 @@ public class BackupRestoreInstrumentedTest {
                 prefsManager.getMonthlyBudgetCents(), 131072.01d);
         assertEquals(DateAmountUtils.BudgetStatus.LEVEL_WARNING, exact.level);
         assertEquals(0L, exact.overCents);
+    }
+
+    @Test
+    public void onUpgrade_migratesLegacyAmountToCentsPreservingValue() throws Exception {
+        // 手工构造 v1 数据库（amount REAL），再让 SQLiteOpenHelper 触发 v1 -> v2 迁移
+        SQLiteDatabase legacy = targetContext.openOrCreateDatabase(testDbName, Context.MODE_PRIVATE, null);
+        try {
+            legacy.execSQL("CREATE TABLE category ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type INTEGER NOT NULL, "
+                    + "icon TEXT, is_default INTEGER DEFAULT 0)");
+            legacy.execSQL("CREATE TABLE bill ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL NOT NULL, type INTEGER NOT NULL, "
+                    + "category_id INTEGER NOT NULL, note TEXT, bill_date TEXT NOT NULL, receipt_path TEXT, "
+                    + "created_at TEXT NOT NULL, FOREIGN KEY(category_id) REFERENCES category(id))");
+            legacy.execSQL("INSERT INTO category (id, name, type, icon, is_default) VALUES (1, '餐饮', 0, '餐', 1)");
+            legacy.execSQL("INSERT INTO bill (id, amount, type, category_id, note, bill_date, receipt_path, created_at) "
+                    + "VALUES (1, 12.34, 0, 1, '午饭', '2026-11-25', '', '2026-11-25 10:00:00')");
+            legacy.setVersion(1);
+        } finally {
+            legacy.close();
+        }
+
+        Bill migrated = billDao.getById(1);
+        assertNotNull(migrated);
+        assertEquals(12.34, migrated.getAmount(), 0.001);
+        assertEquals(1234L, DateAmountUtils.toCents(migrated.getAmount()));
+        assertEquals(12.34, billDao.getMonthlyTotal("2026-11", Category.TYPE_EXPENSE), 0.0001);
+    }
+
+    @Test
+    public void import_ignoresReceiptPathOutsideReceiptsDirAndProtectsDelete() throws Exception {
+        File outside = new File(isolatedFilesDir, "outside.txt");
+        writeBytes(outside, new byte[]{1, 2, 3});
+        File csv = new File(FileStorageManager.getExportsDir(isolatedContext), "test_outside_path.csv");
+        String content = CsvCodec.HEADER + "\n1,12.34,0,餐饮,path-test,2026-11-25,"
+                + outside.getAbsolutePath() + ",2026-11-25 10:00:00\n";
+        writeBytes(csv, content.getBytes("UTF-8"));
+
+        FileStorageManager.importBillsFromCsv(
+                isolatedContext, csv, billDao, categoryDao, BillDao.IMPORT_MODE_REPLACE);
+
+        List<Bill> bills = billDao.getAllBills();
+        assertEquals(1, bills.size());
+        assertEquals("", bills.get(0).getReceiptPath());
+        assertTrue(outside.isFile());
+        assertFalse(FileStorageManager.deleteReceiptFile(isolatedContext, outside.getAbsolutePath()));
+        assertTrue(outside.isFile());
+    }
+
+    @Test
+    public void dedupAppend_restoresDeletedDuplicateRow() throws Exception {
+        Bill first = createSampleBill(12.34, "");
+        Bill second = createSampleBill(12.34, "");
+        long firstId = billDao.insert(first);
+        long secondId = billDao.insert(second);
+        assertTrue(firstId > 0L);
+        assertTrue(secondId > 0L);
+
+        FileStorageManager.ExportResult backup = FileStorageManager.exportBillsBackup(
+                isolatedContext, billDao.getAllBills());
+        assertTrue(billDao.delete(secondId) > 0);
+        assertEquals(1, billDao.getAllBills().size());
+
+        FileStorageManager.RestoreResult result = FileStorageManager.importBillsFromCsv(
+                isolatedContext, backup.csvFile, billDao, categoryDao, BillDao.IMPORT_MODE_DEDUP_APPEND);
+        assertEquals(1, result.importedCount);
+        assertEquals(1, result.skippedCount);
+        assertEquals(2, billDao.getAllBills().size());
+    }
+
+    @Test
+    public void exportBackups_createUniqueFilesWithinSameSecond() throws Exception {
+        billDao.insert(createSampleBill(1.00, ""));
+        FileStorageManager.ExportResult first = FileStorageManager.exportBillsBackup(
+                isolatedContext, billDao.getAllBills());
+        FileStorageManager.ExportResult second = FileStorageManager.exportBillsBackup(
+                isolatedContext, billDao.getAllBills());
+
+        assertFalse(first.csvFile.getName().equals(second.csvFile.getName()));
+        assertTrue(first.csvFile.isFile());
+        assertTrue(second.csvFile.isFile());
+        assertEquals(2, FileStorageManager.listBackupFiles(isolatedContext).size());
+    }
+
+    @Test
+    public void queryBills_escapesLikeWildcards() throws Exception {
+        Bill percent = createSampleBill(12.34, "");
+        percent.setNote("50%off");
+        Bill digits = createSampleBill(56.78, "");
+        digits.setNote("5000off");
+        billDao.insert(percent);
+        billDao.insert(digits);
+
+        List<Bill> results = billDao.queryBills("", -1, -1L, "50%");
+        assertEquals(1, results.size());
+        assertEquals("50%off", results.get(0).getNote());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void insert_rejectsAmountAboveMax() {
+        Bill bill = createSampleBill(12.34, "");
+        bill.setAmount(1e18);
+        billDao.insert(bill);
     }
 
     private Bill createSampleBill(double amount, String receiptPath) {

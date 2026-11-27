@@ -38,7 +38,7 @@ public class PrefsManager {
 
     public long getMonthlyBudgetCents() {
         if (prefs.contains(KEY_MONTHLY_BUDGET_CENTS)) {
-            long cents = prefs.getLong(KEY_MONTHLY_BUDGET_CENTS, DEFAULT_MONTHLY_BUDGET_CENTS);
+            long cents = getLongSafe(KEY_MONTHLY_BUDGET_CENTS, DEFAULT_MONTHLY_BUDGET_CENTS);
             return Math.max(0L, cents);
         }
         float legacy = getMonthlyBudget();
@@ -57,7 +57,7 @@ public class PrefsManager {
         if (prefs.contains(KEY_MONTHLY_BUDGET_CENTS)) {
             return (float) (getMonthlyBudgetCents() / 100.0);
         }
-        float budget = prefs.getFloat(KEY_MONTHLY_BUDGET, DEFAULT_MONTHLY_BUDGET);
+        float budget = getFloatSafe(KEY_MONTHLY_BUDGET, DEFAULT_MONTHLY_BUDGET);
         return (Float.isNaN(budget) || Float.isInfinite(budget) || budget < 0f) ? 0f : budget;
     }
 
@@ -71,7 +71,7 @@ public class PrefsManager {
     }
 
     public String getDefaultCurrency() {
-        String currency = prefs.getString(KEY_DEFAULT_CURRENCY, DEFAULT_CURRENCY);
+        String currency = getStringSafe(KEY_DEFAULT_CURRENCY, DEFAULT_CURRENCY);
         if (currency == null || currency.trim().isEmpty()) {
             return DEFAULT_CURRENCY;
         }
@@ -86,7 +86,7 @@ public class PrefsManager {
     }
 
     public String getThemeMode() {
-        String mode = prefs.getString(KEY_THEME_MODE, THEME_LIGHT);
+        String mode = getStringSafe(KEY_THEME_MODE, THEME_LIGHT);
         return THEME_DARK.equals(mode) ? THEME_DARK : THEME_LIGHT;
     }
 
@@ -106,7 +106,7 @@ public class PrefsManager {
     }
 
     public boolean isReminderEnabled() {
-        return prefs.getBoolean(KEY_REMINDER_ENABLED, true);
+        return getBooleanSafe(KEY_REMINDER_ENABLED, true);
     }
 
     public void setReminderEnabled(boolean enabled) {
@@ -114,10 +114,43 @@ public class PrefsManager {
     }
 
     public boolean isFirstLaunch() {
-        return prefs.getBoolean(KEY_FIRST_LAUNCH, true);
+        return getBooleanSafe(KEY_FIRST_LAUNCH, true);
     }
 
     public void setFirstLaunch(boolean firstLaunch) {
         prefs.edit().putBoolean(KEY_FIRST_LAUNCH, firstLaunch).apply();
+    }
+
+    // SharedPreferences 文件被篡改/类型不一致时 getXxx 会抛 ClassCastException，统一回退默认值
+    private long getLongSafe(String key, long defaultValue) {
+        try {
+            return prefs.getLong(key, defaultValue);
+        } catch (ClassCastException e) {
+            return defaultValue;
+        }
+    }
+
+    private float getFloatSafe(String key, float defaultValue) {
+        try {
+            return prefs.getFloat(key, defaultValue);
+        } catch (ClassCastException e) {
+            return defaultValue;
+        }
+    }
+
+    private String getStringSafe(String key, String defaultValue) {
+        try {
+            return prefs.getString(key, defaultValue);
+        } catch (ClassCastException e) {
+            return defaultValue;
+        }
+    }
+
+    private boolean getBooleanSafe(String key, boolean defaultValue) {
+        try {
+            return prefs.getBoolean(key, defaultValue);
+        } catch (ClassCastException e) {
+            return defaultValue;
+        }
     }
 }

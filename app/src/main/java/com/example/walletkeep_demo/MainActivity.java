@@ -2,14 +2,10 @@ package com.example.walletkeep_demo;
 
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.PorterDuff;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.AdapterView;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -28,13 +24,12 @@ import com.example.walletkeep_demo.storage.FileStorageManager;
 import com.example.walletkeep_demo.storage.PrefsManager;
 import com.example.walletkeep_demo.ui.adapter.BillListAdapter;
 import com.example.walletkeep_demo.util.DateAmountUtils;
+import com.example.walletkeep_demo.util.UiUtils;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 记账小助手首页仪表盘：展示月度收支概览、预算监控进度条、快捷功能入口、
@@ -70,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     private BillListAdapter recentAdapter;
     private String currentMonth;
     private boolean appliedDarkTheme;
+    private final ExecutorService dbExecutor = Executors.newSingleThreadExecutor();
+    private int loadToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,7 +94,6 @@ public class MainActivity extends AppCompatActivity {
         setupAdapterAndListeners();
 
         if (savedInstanceState == null && prefsManager.isFirstLaunch()) {
-            prefsManager.setFirstLaunch(false);
             showOnboardingDialog();
         }
     }
@@ -116,6 +112,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_MONTH, currentMonth);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        dbExecutor.shutdown();
     }
 
     private void bindViews() {
@@ -139,7 +141,7 @@ public class MainActivity extends AppCompatActivity {
         btnFabAdd = findViewById(R.id.btn_fab_add);
 
         lvRecentBills.setFocusable(false);
-        ViewCompat.setElevation(btnFabAdd, dpToPx(6));
+        ViewCompat.setElevation(btnFabAdd, UiUtils.dpToPx(this, 6));
     }
 
     private void setupAdapterAndListeners() {
@@ -223,14 +225,42 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadDashboard() {
-        String currency = prefsManager.getDefaultCurrency();
-        long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
-        boolean reminderEnabled = prefsManager.isReminderEnabled();
+        final String month = currentMonth;
+        final int token = ++loadToken;
+        final String currency = prefsManager.getDefaultCurrency();
+        final long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
+        final boolean reminderEnabled = prefsManager.isReminderEnabled();
 
-        tvHomeMonth.setText(getString(R.string.fmt_home_month_overview, formatMonthLabel(currentMonth)));
+        dbExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
+                    final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
+                    final List<Bill> recentBills = billDao.getRecentBills(RECENT_BILL_LIMIT);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            applyDashboard(month, currency, monthlyBudgetCents, reminderEnabled,
+                                    monthExpense, monthIncome, recentBills);
+                        }
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("MainActivity", "loadDashboard failed", e);
+                    postError(R.string.error_load_failed);
+                }
+            }
+        });
+    }
 
-        double monthExpense = billDao.getMonthlyTotal(currentMonth, Category.TYPE_EXPENSE);
-        double monthIncome = billDao.getMonthlyTotal(currentMonth, Category.TYPE_INCOME);
+    private void applyDashboard(String month, String currency, long monthlyBudgetCents,
+                                boolean reminderEnabled, double monthExpense, double monthIncome,
+                                List<Bill> recentBills) {
+        tvHomeMonth.setText(getString(R.string.fmt_home_month_overview, UiUtils.formatMonthLabel(month)));
+
         double balance = monthIncome - monthExpense;
         if (Math.abs(balance) < 0.005) {
             balance = 0.0;
@@ -238,11 +268,10 @@ public class MainActivity extends AppCompatActivity {
 
         tvHomeExpense.setText(DateAmountUtils.formatAmount(currency, monthExpense));
         tvHomeIncome.setText(DateAmountUtils.formatAmount(currency, monthIncome));
-        tvHomeBalance.setText(formatBalanceAmount(currency, balance));
+        tvHomeBalance.setText(UiUtils.formatBalanceAmount(currency, balance));
 
         updateBudgetMonitor(currency, monthlyBudgetCents, monthExpense, reminderEnabled);
 
-        List<Bill> recentBills = billDao.getRecentBills(RECENT_BILL_LIMIT);
         recentAdapter.updateData(recentBills, currency);
 
         if (recentBills.isEmpty()) {
@@ -251,17 +280,17 @@ public class MainActivity extends AppCompatActivity {
         } else {
             tvHomeEmpty.setVisibility(View.GONE);
             lvRecentBills.setVisibility(View.VISIBLE);
-            setListViewHeightBasedOnChildren(lvRecentBills);
+            UiUtils.setListViewHeightBasedOnChildren(lvRecentBills);
         }
     }
 
     private void updateBudgetMonitor(String currency, long monthlyBudgetCents, double monthExpense, boolean reminderEnabled) {
         DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudgetCents(monthlyBudgetCents, monthExpense);
         if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
-            tvHomeBudgetLabel.setText("未设置月度预算，可前往设置开启");
+            tvHomeBudgetLabel.setText(R.string.budget_unset_hint);
             tvHomeBudgetTotal.setVisibility(View.GONE);
             pbHomeBudget.setProgress(0);
-            applyBudgetProgressColors(ContextCompat.getColor(this, R.color.colorSafe));
+            UiUtils.applyBudgetProgressColors(pbHomeBudget, ContextCompat.getColor(this, R.color.colorSafe));
             return;
         }
 
@@ -280,150 +309,111 @@ public class MainActivity extends AppCompatActivity {
             tvHomeBudgetLabel.setText(getString(R.string.fmt_budget_remaining, DateAmountUtils.formatCents(currency, status.remainingCents)));
             progressColor = ContextCompat.getColor(this, R.color.colorSafe);
         }
-        applyBudgetProgressColors(progressColor);
-    }
-
-    private void applyBudgetProgressColors(int progressColor) {
-        Drawable drawable = pbHomeBudget.getProgressDrawable();
-        if (drawable == null) {
-            return;
-        }
-        Drawable mutated = drawable.mutate();
-        if (mutated instanceof LayerDrawable) {
-            LayerDrawable layers = (LayerDrawable) mutated;
-            Drawable bgLayer = layers.findDrawableByLayerId(android.R.id.background);
-            if (bgLayer != null) {
-                bgLayer.setColorFilter(0x4DFFFFFF, PorterDuff.Mode.SRC_IN);
-            }
-            Drawable progressLayer = layers.findDrawableByLayerId(android.R.id.progress);
-            if (progressLayer != null) {
-                progressLayer.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
-            }
-        } else {
-            mutated.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
-        }
-        pbHomeBudget.setProgressDrawable(mutated);
+        UiUtils.applyBudgetProgressColors(pbHomeBudget, progressColor);
     }
 
     private void showOnboardingDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("欢迎使用记账小助手")
-                .setMessage("是否一键生成 10 笔演示账单数据，方便体验月度统计图表、筛选查询和 CSV 导出功能？")
-                .setPositiveButton("生成演示数据", new DialogInterface.OnClickListener() {
+                .setTitle(R.string.onboarding_title)
+                .setMessage(R.string.onboarding_message)
+                .setPositiveButton(R.string.onboarding_generate, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        billDao.seedDemoBills();
-                        Toast.makeText(MainActivity.this, "已生成 10 笔演示账单", Toast.LENGTH_SHORT).show();
-                        loadDashboard();
+                        // 用户作出选择后才写入首次启动标记；若进程在弹窗期间被杀，下次仍会提示
+                        prefsManager.setFirstLaunch(false);
+                        seedDemoDataAndRefresh();
                     }
                 })
-                .setNegativeButton("暂不，空白开始", null)
+                .setNegativeButton(R.string.onboarding_skip, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        prefsManager.setFirstLaunch(false);
+                    }
+                })
                 .show();
+    }
+
+    private void seedDemoDataAndRefresh() {
+        dbExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    billDao.seedDemoBills();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            Toast.makeText(MainActivity.this, R.string.toast_demo_seeded, Toast.LENGTH_SHORT).show();
+                            loadDashboard();
+                        }
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("MainActivity", "seedDemoBills failed", e);
+                    postError(R.string.error_operation_generic);
+                }
+            }
+        });
     }
 
     private void confirmDeleteBill(final Bill bill) {
         new AlertDialog.Builder(this)
-                .setTitle("删除账单")
-                .setMessage("确定删除这笔账单吗？")
-                .setPositiveButton("删除", new DialogInterface.OnClickListener() {
+                .setTitle(R.string.dialog_delete_bill_title)
+                .setMessage(R.string.dialog_delete_bill_message)
+                .setPositiveButton(R.string.action_delete, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        int deletedRows = billDao.delete(bill.getId());
-                        if (deletedRows > 0) {
-                            String receiptPath = bill.getReceiptPath() == null ? "" : bill.getReceiptPath().trim();
-                            if (!receiptPath.isEmpty()) {
-                                FileStorageManager.deleteReceiptFile(receiptPath);
+                        final long billId = bill.getId();
+                        final String receiptPath = bill.getReceiptPath() == null
+                                ? "" : bill.getReceiptPath().trim();
+                        dbExecutor.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    final int deletedRows = billDao.delete(billId);
+                                    if (deletedRows > 0 && !receiptPath.isEmpty()
+                                            && billDao.countBillsByReceiptPath(receiptPath) == 0) {
+                                        FileStorageManager.deleteReceiptFile(getApplicationContext(), receiptPath);
+                                    }
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            if (deletedRows > 0) {
+                                                Toast.makeText(MainActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
+                                            } else {
+                                                Toast.makeText(MainActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
+                                            }
+                                            loadDashboard();
+                                        }
+                                    });
+                                } catch (final RuntimeException e) {
+                                    Log.e("MainActivity", "delete bill failed", e);
+                                    postError(R.string.error_operation_generic);
+                                }
                             }
-                            Toast.makeText(MainActivity.this, "账单已删除", Toast.LENGTH_SHORT).show();
-                        } else {
-                            Toast.makeText(MainActivity.this, "账单不存在或已被删除", Toast.LENGTH_SHORT).show();
-                        }
-                        loadDashboard();
+                        });
                     }
                 })
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
-    private void setListViewHeightBasedOnChildren(final ListView listView) {
-        ListAdapter adapter = listView.getAdapter();
-        if (adapter == null) {
-            return;
-        }
-        int count = adapter.getCount();
-        ViewGroup.LayoutParams params = listView.getLayoutParams();
-        if (count == 0) {
-            params.height = 0;
-            listView.setLayoutParams(params);
-            return;
-        }
-
-        final int listWidth = listView.getWidth();
-        int widthSpec;
-        if (listWidth > 0) {
-            int contentWidth = Math.max(1, listWidth - listView.getPaddingLeft() - listView.getPaddingRight());
-            widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY);
-        } else {
-            widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-        }
-        int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-
-        int totalHeight = listView.getPaddingTop() + listView.getPaddingBottom();
-        for (int i = 0; i < count; i++) {
-            View itemView = adapter.getView(i, null, listView);
-            if (itemView.getLayoutParams() == null) {
-                itemView.setLayoutParams(new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                ));
-            }
-            itemView.measure(widthSpec, heightSpec);
-            totalHeight += itemView.getMeasuredHeight();
-        }
-        if (count > 1) {
-            totalHeight += listView.getDividerHeight() * (count - 1);
-        }
-
-        params.height = totalHeight;
-        listView.setLayoutParams(params);
-
-        if (listWidth == 0) {
-            listView.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (!isFinishing() && listView.getWidth() > 0) {
-                        setListViewHeightBasedOnChildren(listView);
-                    }
+    private void postError(final int messageRes) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!isUiInvalid()) {
+                    Toast.makeText(MainActivity.this, messageRes, Toast.LENGTH_SHORT).show();
                 }
-            });
-        }
-    }
-
-    private static String formatMonthLabel(String yyyyMM) {
-        if (yyyyMM == null || yyyyMM.trim().isEmpty()) {
-            return "";
-        }
-        SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM", Locale.CHINA);
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy年MM月", Locale.CHINA);
-        try {
-            Date date = parser.parse(yyyyMM.trim());
-            if (date != null) {
-                return formatter.format(date);
             }
-        } catch (ParseException ignored) {
-        }
-        return yyyyMM;
+        });
     }
 
-    private static String formatBalanceAmount(String currency, double balance) {
-        if (balance < 0.0) {
-            return "-" + DateAmountUtils.formatAmount(currency, Math.abs(balance));
-        }
-        return DateAmountUtils.formatAmount(currency, balance);
-    }
-
-    private int dpToPx(int dp) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round(dp * density);
+    private boolean isUiInvalid() {
+        return isFinishing() || isDestroyed();
     }
 }

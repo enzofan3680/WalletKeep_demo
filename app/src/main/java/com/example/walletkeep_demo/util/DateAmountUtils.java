@@ -12,6 +12,12 @@ import java.util.Locale;
  * 日期与金额格式化/校验工具类（兼容 Android API 17+）。
  */
 public final class DateAmountUtils {
+    /**
+     * 单笔金额上限：¥999,999,999.99。防止 toCents 饱和与 SQLite SUM 64 位整数溢出。
+     */
+    public static final long MAX_AMOUNT_CENTS = 99_999_999_999L;
+    public static final double MAX_AMOUNT_YUAN = MAX_AMOUNT_CENTS / 100.0;
+
     private DateAmountUtils() {
     }
 
@@ -67,7 +73,18 @@ public final class DateAmountUtils {
         if (Double.isNaN(amount) || Double.isInfinite(amount)) {
             return 0L;
         }
-        return Math.round(amount * 100.0);
+        double cents = amount * 100.0;
+        if (cents >= Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+        if (cents <= Long.MIN_VALUE) {
+            return Long.MIN_VALUE;
+        }
+        return Math.round(cents);
+    }
+
+    public static boolean isAmountWithinRange(long cents) {
+        return cents > 0L && cents <= MAX_AMOUNT_CENTS;
     }
 
     public static String formatCents(String currency, long cents) {
@@ -165,11 +182,11 @@ public final class DateAmountUtils {
         }
         try {
             double val = Double.parseDouble(trimmed);
-            if (Double.isNaN(val) || Double.isInfinite(val) || val <= 0.0) {
+            if (Double.isNaN(val) || Double.isInfinite(val) || val <= 0.0 || val > MAX_AMOUNT_YUAN) {
                 return -1.0;
             }
             double rounded = Math.round(val * 100.0) / 100.0;
-            return rounded > 0.0 ? rounded : -1.0;
+            return (rounded > 0.0 && rounded <= MAX_AMOUNT_YUAN) ? rounded : -1.0;
         } catch (NumberFormatException e) {
             return -1.0;
         }

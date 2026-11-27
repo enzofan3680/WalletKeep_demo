@@ -21,11 +21,13 @@ import java.util.Locale;
  */
 public class CategoryStatAdapter extends BaseAdapter {
 
+    private final Context context;
     private final LayoutInflater inflater;
     private final List<CategoryStat> items;
     private String currency;
 
     public CategoryStatAdapter(Context context, List<CategoryStat> items, String currency) {
+        this.context = context;
         this.inflater = LayoutInflater.from(context);
         this.items = new ArrayList<>();
         if (items != null) {
@@ -70,19 +72,15 @@ public class CategoryStatAdapter extends BaseAdapter {
         }
 
         CategoryStat stat = items.get(position);
-        String name = stat.getCategoryName() != null ? stat.getCategoryName().trim() : "";
-        String displayName = name.isEmpty() ? "未分类" : name;
-        String icon = stat.getCategoryIcon() != null ? stat.getCategoryIcon().trim() : "";
-        if (icon.isEmpty()) {
-            icon = !name.isEmpty() ? name.substring(0, 1) : "类";
-        }
+        String displayName = stat.getCategoryNameOr(context.getString(R.string.uncategorized));
+        String icon = stat.getCategoryIconOr(context.getString(R.string.icon_fallback_category));
 
         double pct = Math.max(0.0, Math.min(100.0, stat.getPercentage()));
         int progress = (int) Math.round(pct * 10.0);
 
         holder.tvIcon.setText(icon);
         holder.tvName.setText(displayName);
-        holder.tvCount.setText(String.format(Locale.CHINA, " · %d笔", stat.getBillCount()));
+        holder.tvCount.setText(context.getString(R.string.fmt_stat_count, stat.getBillCount()));
         holder.tvPercent.setText(String.format(Locale.CHINA, "%.1f%%", pct));
         holder.pbRatio.setProgress(progress);
         holder.tvAmount.setText(DateAmountUtils.formatAmount(currency, stat.getTotalAmount()));

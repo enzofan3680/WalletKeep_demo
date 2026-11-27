@@ -1,5 +1,7 @@
 package com.example.walletkeep_demo.model;
 
+import com.example.walletkeep_demo.util.StringUtils;
+
 /**
  * 账单收支分类实体。
  */
@@ -62,6 +64,16 @@ public class Category {
 
     public void setDefault(boolean aDefault) {
         isDefault = aDefault;
+    }
+
+    public String getIconOr(String fallback) {
+        if (icon != null) {
+            String trimmed = icon.trim();
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        return StringUtils.firstCodePointOr(name, fallback);
     }
 
     @Override

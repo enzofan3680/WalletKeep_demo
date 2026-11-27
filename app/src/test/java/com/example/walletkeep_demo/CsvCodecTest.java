@@ -143,4 +143,66 @@ public class CsvCodecTest {
             assertTrue(e.getMessage().contains("2"));
         }
     }
+
+    @Test
+    public void parseBills_toleratesWhitespaceAfterClosingQuote() {
+        String csv = CsvCodec.HEADER
+                + "\n1,10.00,0,餐饮,\"备注\" ,2026-11-24,,2026-11-24 12:00:00\n";
+        List<Bill> parsed = CsvCodec.parseBills(csv);
+        assertEquals(1, parsed.size());
+        assertEquals("备注", parsed.get(0).getNote());
+    }
+
+    @Test
+    public void parseBills_rejectsReorderedHeader() {
+        String badHeader = "id,type,amount,category,note,bill_date,receipt_path,created_at\n"
+                + "1,10.00,0,餐饮,午饭,2026-11-24,,\n";
+        try {
+            CsvCodec.parseBills(badHeader);
+            fail("Expected IllegalArgumentException for reordered header");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("表头"));
+        }
+    }
+
+    @Test
+    public void parseBills_rejectsOversizedField() {
+        StringBuilder huge = new StringBuilder(CsvCodec.MAX_FIELD_CHARS + 1);
+        for (int i = 0; i <= CsvCodec.MAX_FIELD_CHARS; i++) {
+            huge.append('x');
+        }
+        String csv = CsvCodec.HEADER + "\n1,10.00,0,餐饮," + huge
+                + ",2026-11-24,,2026-11-24 12:00:00\n";
+        try {
+            CsvCodec.parseBills(csv);
+            fail("Expected IllegalArgumentException for oversized field");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("字段长度"));
+        }
+    }
+
+    @Test
+    public void parseBills_rejectsAmountAboveMax() {
+        String csv = CsvCodec.HEADER + "\n1,1e18,0,餐饮,x,2026-11-24,,2026-11-24 12:00:00\n";
+        try {
+            CsvCodec.parseBills(csv);
+            fail("Expected IllegalArgumentException for oversized amount");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("金额"));
+        }
+    }
+
+    @Test
+    public void parseBills_rejectsTooManyRows() {
+        StringBuilder csv = new StringBuilder(CsvCodec.HEADER).append('\n');
+        for (int i = 0; i <= CsvCodec.MAX_ROWS; i++) {
+            csv.append("1,10.00,0,餐饮,x,2026-11-24,,\n");
+        }
+        try {
+            CsvCodec.parseBills(csv.toString());
+            fail("Expected IllegalArgumentException for too many rows");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("行数"));
+        }
+    }
 }

@@ -13,6 +13,8 @@ import java.util.Locale;
  */
 public final class CsvCodec {
     public static final String HEADER = "id,amount,type,category,note,bill_date,receipt_path,created_at";
+    public static final int MAX_ROWS = 50_000;
+    public static final int MAX_FIELD_CHARS = 10_000;
 
     private CsvCodec() {
     }
@@ -54,6 +56,9 @@ public final class CsvCodec {
         int startIndex = 0;
         List<String> firstRow = rows.get(0);
         if (!firstRow.isEmpty() && "id".equalsIgnoreCase(firstRow.get(0).trim().replace("\uFEFF", ""))) {
+            if (!isExpectedHeader(firstRow)) {
+                throw new IllegalArgumentException("CSV \u8868\u5934\u4E0E\u9884\u671F\u5217\u987A\u5E8F\u4E0D\u4E00\u81F4");
+            }
             startIndex = 1;
         }
         for (int i = startIndex; i < rows.size(); i++) {
@@ -107,6 +112,23 @@ public final class CsvCodec {
         return result;
     }
 
+    private static boolean isExpectedHeader(List<String> header) {
+        String[] expected = HEADER.split(",");
+        if (header.size() != expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i++) {
+            String actual = header.get(i) == null ? "" : header.get(i).trim();
+            if (i == 0) {
+                actual = actual.replace("\uFEFF", "");
+            }
+            if (!expected[i].equalsIgnoreCase(actual)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static String escapeField(String value) {
         if (value == null) {
             return "";
@@ -132,14 +154,14 @@ public final class CsvCodec {
             if (inQuotes) {
                 if (c == '"') {
                     if (i + 1 < len && content.charAt(i + 1) == '"') {
-                        currentField.append('"');
+                        appendFieldChar(currentField, '"');
                         i++;
                     } else {
                         inQuotes = false;
                         justClosedQuote = true;
                     }
                 } else {
-                    currentField.append(c);
+                    appendFieldChar(currentField, c);
                 }
             } else if (justClosedQuote) {
                 if (c == ',') {
@@ -147,12 +169,14 @@ public final class CsvCodec {
                     currentField.setLength(0);
                     fieldStarted = false;
                     justClosedQuote = false;
+                } else if (c == ' ' || c == '\t') {
+                    // 容忍外部工具（如 Excel）在闭合引号后补的空格
                 } else if (c == '\r') {
                     // ignore CR, expect LF or EOF
                 } else if (c == '\n') {
                     currentRow.add(currentField.toString());
                     currentField.setLength(0);
-                    rows.add(currentRow);
+                    addRow(rows, currentRow);
                     currentRow = new ArrayList<String>();
                     fieldStarted = false;
                     justClosedQuote = false;
@@ -175,11 +199,11 @@ public final class CsvCodec {
                 } else if (c == '\n') {
                     currentRow.add(currentField.toString());
                     currentField.setLength(0);
-                    rows.add(currentRow);
+                    addRow(rows, currentRow);
                     currentRow = new ArrayList<String>();
                     fieldStarted = false;
                 } else {
-                    currentField.append(c);
+                    appendFieldChar(currentField, c);
                     fieldStarted = true;
                 }
             }
@@ -189,8 +213,22 @@ public final class CsvCodec {
         }
         if (currentField.length() > 0 || !currentRow.isEmpty() || justClosedQuote) {
             currentRow.add(currentField.toString());
-            rows.add(currentRow);
+            addRow(rows, currentRow);
         }
         return rows;
+    }
+
+    private static void appendFieldChar(StringBuilder field, char c) {
+        if (field.length() >= MAX_FIELD_CHARS) {
+            throw new IllegalArgumentException("CSV 字段长度超过 " + MAX_FIELD_CHARS + " 字符限制");
+        }
+        field.append(c);
+    }
+
+    private static void addRow(List<List<String>> rows, List<String> row) {
+        if (rows.size() >= MAX_ROWS) {
+            throw new IllegalArgumentException("CSV 行数超过 " + MAX_ROWS + " 行限制");
+        }
+        rows.add(row);
     }
 }
