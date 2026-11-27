@@ -1,14 +1,9 @@
 package com.example.walletkeep_demo;
 
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -24,13 +19,12 @@ import com.example.walletkeep_demo.storage.PrefsManager;
 import com.example.walletkeep_demo.ui.adapter.CategoryStatAdapter;
 import com.example.walletkeep_demo.ui.view.CategoryChartView;
 import com.example.walletkeep_demo.util.DateAmountUtils;
+import com.example.walletkeep_demo.util.UiUtils;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 月度收支统计页面：支持月份切换、月度收支概览与预算消耗进度展示、
@@ -62,6 +56,8 @@ public class StatsActivity extends AppCompatActivity {
 
     private String currentMonth;
     private int currentType = Category.TYPE_EXPENSE;
+    private final ExecutorService dbExecutor = Executors.newSingleThreadExecutor();
+    private int loadToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -102,6 +98,12 @@ public class StatsActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_MONTH, currentMonth);
         outState.putInt(STATE_TYPE, currentType);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        dbExecutor.shutdown();
     }
 
     @Override
@@ -177,13 +179,36 @@ public class StatsActivity extends AppCompatActivity {
     }
 
     private void loadStats() {
-        String currency = prefsManager.getDefaultCurrency();
-        long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
+        updateTypeTabs();
+        final String month = currentMonth;
+        final int type = currentType;
+        final int token = ++loadToken;
+        final String currency = prefsManager.getDefaultCurrency();
+        final long monthlyBudgetCents = prefsManager.getMonthlyBudgetCents();
 
-        tvStatsMonth.setText(formatMonthLabel(currentMonth));
+        tvStatsMonth.setText(UiUtils.formatMonthLabel(month));
 
-        double monthExpense = billDao.getMonthlyTotal(currentMonth, Category.TYPE_EXPENSE);
-        double monthIncome = billDao.getMonthlyTotal(currentMonth, Category.TYPE_INCOME);
+        dbExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
+                final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
+                final List<CategoryStat> stats = billDao.getCategoryStats(month, type);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (token != loadToken || isUiInvalid()) {
+                            return;
+                        }
+                        applyStats(currency, monthlyBudgetCents, monthExpense, monthIncome, stats);
+                    }
+                });
+            }
+        });
+    }
+
+    private void applyStats(String currency, long monthlyBudgetCents, double monthExpense,
+                            double monthIncome, List<CategoryStat> stats) {
         double monthBalance = monthIncome - monthExpense;
         if (Math.abs(monthBalance) < 0.005) {
             monthBalance = 0.0;
@@ -191,12 +216,10 @@ public class StatsActivity extends AppCompatActivity {
 
         tvStatsExpense.setText(DateAmountUtils.formatAmount(currency, monthExpense));
         tvStatsIncome.setText(DateAmountUtils.formatAmount(currency, monthIncome));
-        tvStatsBalance.setText(formatBalanceAmount(currency, monthBalance));
+        tvStatsBalance.setText(UiUtils.formatBalanceAmount(currency, monthBalance));
 
         updateBudgetSection(currency, monthlyBudgetCents, monthExpense);
-        updateTypeTabs();
 
-        List<CategoryStat> stats = billDao.getCategoryStats(currentMonth, currentType);
         chartCategory.setStats(stats, currency);
         statAdapter.updateData(stats, currency);
 
@@ -206,22 +229,21 @@ public class StatsActivity extends AppCompatActivity {
         } else {
             tvStatsEmpty.setVisibility(View.GONE);
             lvCategoryStats.setVisibility(View.VISIBLE);
-            setListViewHeightBasedOnChildren(lvCategoryStats);
+            UiUtils.setListViewHeightBasedOnChildren(lvCategoryStats);
         }
     }
 
     private void updateBudgetSection(String currency, long monthlyBudgetCents, double monthExpense) {
         DateAmountUtils.BudgetStatus status = DateAmountUtils.evaluateBudgetCents(monthlyBudgetCents, monthExpense);
         if (status.level == DateAmountUtils.BudgetStatus.LEVEL_UNSET) {
-            tvStatsBudgetStatus.setText("未设置月度预算");
+            tvStatsBudgetStatus.setText(R.string.label_budget_unset);
             pbStatsBudget.setProgress(0);
-            applyBudgetProgressColors(Color.WHITE);
+            UiUtils.applyBudgetProgressColors(pbStatsBudget, Color.WHITE);
             return;
         }
 
-        tvStatsBudgetStatus.setText(String.format(
-                Locale.CHINA,
-                "月度预算 %s · 已使用 %.1f%%",
+        tvStatsBudgetStatus.setText(getString(
+                R.string.fmt_stats_budget_usage,
                 DateAmountUtils.formatCents(currency, status.budgetCents),
                 status.usagePercent
         ));
@@ -236,29 +258,7 @@ public class StatsActivity extends AppCompatActivity {
         } else {
             progressColor = ContextCompat.getColor(this, R.color.textOnPrimary);
         }
-        applyBudgetProgressColors(progressColor);
-    }
-
-    private void applyBudgetProgressColors(int progressColor) {
-        Drawable drawable = pbStatsBudget.getProgressDrawable();
-        if (drawable == null) {
-            return;
-        }
-        Drawable mutated = drawable.mutate();
-        if (mutated instanceof LayerDrawable) {
-            LayerDrawable layers = (LayerDrawable) mutated;
-            Drawable bgLayer = layers.findDrawableByLayerId(android.R.id.background);
-            if (bgLayer != null) {
-                bgLayer.setColorFilter(0x4DFFFFFF, PorterDuff.Mode.SRC_IN);
-            }
-            Drawable progressLayer = layers.findDrawableByLayerId(android.R.id.progress);
-            if (progressLayer != null) {
-                progressLayer.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
-            }
-        } else {
-            mutated.setColorFilter(progressColor, PorterDuff.Mode.SRC_IN);
-        }
-        pbStatsBudget.setProgressDrawable(mutated);
+        UiUtils.applyBudgetProgressColors(pbStatsBudget, progressColor);
     }
 
     private void updateTypeTabs() {
@@ -273,80 +273,7 @@ public class StatsActivity extends AppCompatActivity {
         tvStatsTabIncome.setTextColor(isExpense ? secondary : onPrimary);
     }
 
-    private void setListViewHeightBasedOnChildren(final ListView listView) {
-        ListAdapter adapter = listView.getAdapter();
-        if (adapter == null) {
-            return;
-        }
-        int count = adapter.getCount();
-        ViewGroup.LayoutParams params = listView.getLayoutParams();
-        if (count == 0) {
-            params.height = 0;
-            listView.setLayoutParams(params);
-            return;
-        }
-
-        final int listWidth = listView.getWidth();
-        int widthSpec;
-        if (listWidth > 0) {
-            int contentWidth = Math.max(1, listWidth - listView.getPaddingLeft() - listView.getPaddingRight());
-            widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY);
-        } else {
-            widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-        }
-        int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-
-        int totalHeight = listView.getPaddingTop() + listView.getPaddingBottom();
-        for (int i = 0; i < count; i++) {
-            View itemView = adapter.getView(i, null, listView);
-            if (itemView.getLayoutParams() == null) {
-                itemView.setLayoutParams(new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                ));
-            }
-            itemView.measure(widthSpec, heightSpec);
-            totalHeight += itemView.getMeasuredHeight();
-        }
-        if (count > 1) {
-            totalHeight += listView.getDividerHeight() * (count - 1);
-        }
-
-        params.height = totalHeight;
-        listView.setLayoutParams(params);
-
-        if (listWidth == 0) {
-            listView.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (!isFinishing() && listView.getWidth() > 0) {
-                        setListViewHeightBasedOnChildren(listView);
-                    }
-                }
-            });
-        }
-    }
-
-    private static String formatMonthLabel(String yyyyMM) {
-        if (yyyyMM == null || yyyyMM.trim().isEmpty()) {
-            return "";
-        }
-        SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM", Locale.CHINA);
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy年MM月", Locale.CHINA);
-        try {
-            Date date = parser.parse(yyyyMM.trim());
-            if (date != null) {
-                return formatter.format(date);
-            }
-        } catch (ParseException ignored) {
-        }
-        return yyyyMM;
-    }
-
-    private static String formatBalanceAmount(String currency, double balance) {
-        if (balance < 0.0) {
-            return "-" + DateAmountUtils.formatAmount(currency, Math.abs(balance));
-        }
-        return DateAmountUtils.formatAmount(currency, balance);
+    private boolean isUiInvalid() {
+        return isFinishing() || isDestroyed();
     }
 }

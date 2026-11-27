@@ -107,4 +107,109 @@
     <string name="fmt_budget_over">本月已超支：%1$s！</string>
     <string name="fmt_budget_warning">预算即将用尽（已用 %1$.0f%%）</string>
     <string name="fmt_budget_remaining">剩余预算：%1$s</string>
+
+    <!-- 通用操作 -->
+    <string name="action_confirm">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_delete">删除</string>
+    <string name="action_close">关闭</string>
+    <string name="action_got_it">知道了</string>
+
+    <!-- 通用状态 -->
+    <string name="uncategorized">未分类</string>
+    <string name="no_note">无备注</string>
+    <string name="icon_fallback_bill">账</string>
+    <string name="icon_fallback_category">类</string>
+
+    <!-- 首页 -->
+    <string name="budget_unset_hint">未设置月度预算，可前往设置开启</string>
+    <string name="onboarding_title">欢迎使用记账小助手</string>
+    <string name="onboarding_message">是否一键生成 10 笔演示账单数据，方便体验月度统计图表、筛选查询和 CSV 导出功能？</string>
+    <string name="onboarding_generate">生成演示数据</string>
+    <string name="onboarding_skip">暂不，空白开始</string>
+    <string name="toast_demo_seeded">已生成 10 笔演示账单</string>
+
+    <!-- 账单操作通用 -->
+    <string name="dialog_delete_bill_title">删除账单</string>
+    <string name="dialog_delete_bill_message">确定删除这笔账单吗？</string>
+    <string name="dialog_delete_bill_message_confirm">确定删除这笔账单吗？删除后无法恢复。</string>
+    <string name="toast_bill_deleted">账单已删除</string>
+    <string name="toast_bill_not_found">账单不存在或已被删除</string>
+
+    <!-- 账单明细 -->
+    <string name="filter_type_all">全部类型</string>
+    <string name="filter_type_expense">仅支出</string>
+    <string name="filter_type_income">仅收入</string>
+    <string name="filter_all_categories">全部分类</string>
+    <string name="filter_all_months">全部月份</string>
+    <string name="fmt_filter_count">共 %1$d 笔</string>
+
+    <!-- 统计 -->
+    <string name="fmt_stats_budget_usage">月度预算 %1$s · 已使用 %2$.1f%%</string>
+    <string name="chart_empty">暂无本月分类统计数据</string>
+    <string name="fmt_stat_count">" · %1$d笔"</string>
+
+    <!-- 记一笔 -->
+    <string name="action_save_changes">保存修改</string>
+    <string name="toast_default_category_undeletable">系统默认分类不可删除</string>
+    <string name="hint_new_category">输入新分类名称，如：奶茶、书籍</string>
+    <string name="title_new_expense_category">新增支出分类</string>
+    <string name="title_new_income_category">新增收入分类</string>
+    <string name="toast_category_name_empty">分类名称不能为空</string>
+    <string name="toast_category_exists">该分类已存在</string>
+    <string name="fmt_category_added">已添加分类「%1$s」</string>
+    <string name="dialog_delete_category_title">删除分类</string>
+    <string name="fmt_delete_category_message">确定删除自定义分类「%1$s」吗？</string>
+    <string name="toast_category_deleted">已删除分类</string>
+    <string name="toast_category_in_use">该分类下已有账单记录，无法删除</string>
+    <string name="toast_no_image_picker">未找到可用的图片选择器</string>
+    <string name="label_saving">正在保存…</string>
+    <string name="action_pick_image">选择图片</string>
+    <string name="fmt_receipt_save_failed">保存图片失败：%1$s</string>
+    <string name="error_unable_write_file">无法写入文件</string>
+    <string name="receipt_file_missing">原票据文件不存在</string>
+    <string name="dialog_receipt_zoom_title">票据大图预览</string>
+    <string name="error_amount_positive">请输入大于 0 的有效金额</string>
+    <string name="toast_select_category">请先选择账单分类</string>
+    <string name="toast_bill_updated">修改已保存</string>
+    <string name="toast_save_failed_deleted">保存失败，账单可能已被删除</string>
+    <string name="toast_bill_saved">记账成功</string>
+    <string name="toast_bill_save_failed">保存账单失败</string>
+
+    <!-- 设置与备份 -->
+    <string name="toast_reminder_enabled">已开启预算超支预警</string>
+    <string name="toast_reminder_disabled">已关闭预算超支预警</string>
+    <string name="fmt_currency_changed">默认币种已切换为 %1$s</string>
+    <string name="fmt_backup_info">私有目录已保存 %1$d 个 CSV 备份文件\n备份目录：%2$s</string>
+    <string name="error_budget_invalid">请输入有效的非负预算金额</string>
+    <string name="error_budget_negative">预算金额不能为负数</string>
+    <string name="error_budget_too_large">预算金额超出允许范围</string>
+    <string name="toast_budget_saved">月度预算已更新</string>
+    <string name="toast_no_bills_to_export">当前没有账单可导出</string>
+    <string name="fmt_export_success">共导出 %1$d 笔账单记录，同步备份 %2$d 张票据图片\n\n文件大小：%3$d 字节\n私有目录路径：\n%4$s</string>
+    <string name="dialog_export_success_title">导出成功</string>
+    <string name="fmt_export_failed">导出失败：%1$s</string>
+    <string name="toast_no_backup_restore">暂无可恢复的 CSV 备份文件，请先导出</string>
+    <string name="dialog_choose_backup_restore">选择要恢复的 CSV 备份</string>
+    <string name="dialog_import_mode_title">选择恢复方式</string>
+    <string name="import_mode_replace">覆盖恢复（推荐）：清空当前账单并按备份还原</string>
+    <string name="import_mode_append">增量去重追加：保留当前账单，自动跳过重复项</string>
+    <string name="fmt_restore_imported">恢复完成：导入 %1$d 笔账单</string>
+    <string name="fmt_restore_skipped">，跳过重复 %1$d 笔</string>
+    <string name="fmt_restore_receipts_updated">，补齐票据关联 %1$d 笔</string>
+    <string name="fmt_restore_receipts_restored">，还原票据 %1$d 张</string>
+    <string name="fmt_restore_receipts_missing">（%1$d 张票据快照缺失已自动忽略）</string>
+    <string name="fmt_read_backup_failed">读取备份失败：%1$s</string>
+    <string name="fmt_csv_format_error">CSV 格式错误：%1$s</string>
+    <string name="fmt_import_failed">导入失败：%1$s</string>
+    <string name="fmt_db_write_failed">数据库写入失败：%1$s</string>
+    <string name="toast_no_backup_preview">暂无可预览的 CSV 备份文件，请先导出</string>
+    <string name="dialog_choose_backup_preview">选择要预览的 CSV 文件</string>
+    <string name="fmt_read_file_failed">读取文件失败：%1$s</string>
+    <string name="generic_operation_error">操作异常</string>
+    <string name="empty_file">(空文件)</string>
+    <string name="dialog_clear_title">确认清空数据</string>
+    <string name="dialog_clear_message">确定清空所有账单记录及票据图片吗？该操作不可撤销（CSV 备份文件会保留）。</string>
+    <string name="action_confirm_clear">确定清空</string>
+    <string name="toast_data_cleared">已清空全部账单与票据文件</string>
 </resources>

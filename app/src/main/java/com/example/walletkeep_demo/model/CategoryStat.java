@@ -48,4 +48,26 @@ public class CategoryStat {
     public void setPercentage(double percentage) {
         this.percentage = percentage;
     }
+
+    /**
+     * 分类名可能为 null 或空白；统一在此兜底，避免各页面重复判断。
+     */
+    public String getCategoryNameOr(String fallback) {
+        if (categoryName == null) {
+            return fallback;
+        }
+        String trimmed = categoryName.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
+    }
+
+    public String getCategoryIconOr(String fallback) {
+        if (categoryIcon != null) {
+            String trimmed = categoryIcon.trim();
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        String name = categoryName == null ? "" : categoryName.trim();
+        return name.isEmpty() ? fallback : name.substring(0, 1);
+    }
 }

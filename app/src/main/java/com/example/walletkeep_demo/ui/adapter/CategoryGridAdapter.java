@@ -79,10 +79,7 @@ public class CategoryGridAdapter extends BaseAdapter {
 
         Category category = items.get(position);
         String name = category.getName() != null ? category.getName().trim() : "";
-        String icon = category.getIcon() != null ? category.getIcon().trim() : "";
-        if (icon.isEmpty()) {
-            icon = !name.isEmpty() ? name.substring(0, 1) : "类";
-        }
+        String icon = category.getIconOr(context.getString(R.string.icon_fallback_category));
 
         holder.tvIcon.setText(icon);
         holder.tvName.setText(name);

@@ -64,6 +64,17 @@ public class Category {
         isDefault = aDefault;
     }
 
+    public String getIconOr(String fallback) {
+        if (icon != null) {
+            String trimmed = icon.trim();
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        String trimmedName = name == null ? "" : name.trim();
+        return trimmedName.isEmpty() ? fallback : trimmedName.substring(0, 1);
+    }
+
     @Override
     public String toString() {
         return name == null ? "" : name;

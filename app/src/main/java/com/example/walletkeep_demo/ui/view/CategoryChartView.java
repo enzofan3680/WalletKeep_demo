@@ -25,7 +25,6 @@ import java.util.Locale;
 public class CategoryChartView extends View {
 
     private static final int MAX_BAR_COUNT = 6;
-    private static final String EMPTY_TEXT = "暂无本月分类统计数据";
     private static final int[] PALETTE = new int[] {
             0xFF1E88E5,
             0xFFFB8C00,
@@ -37,6 +36,8 @@ public class CategoryChartView extends View {
 
     private final List<CategoryStat> stats = new ArrayList<>();
     private String currency = "¥";
+    private String emptyText;
+    private String uncategorizedText;
 
     private final Paint barPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -94,6 +95,8 @@ public class CategoryChartView extends View {
     private void init(Context context) {
         density = context.getResources().getDisplayMetrics().density;
         scaledDensity = context.getResources().getDisplayMetrics().scaledDensity;
+        emptyText = context.getString(R.string.chart_empty);
+        uncategorizedText = context.getString(R.string.uncategorized);
 
         stackedBarHeightPx = dp(22);
         gapAfterStackedPx = dp(14);
@@ -197,8 +200,7 @@ public class CategoryChartView extends View {
         maxValueTextWidth = 0f;
         for (int i = 0; i < barCount; i++) {
             CategoryStat s = stats.get(i);
-            String name = s.getCategoryName() != null ? s.getCategoryName().trim() : "";
-            barRawNames[i] = name.isEmpty() ? "未分类" : name;
+            barRawNames[i] = s.getCategoryNameOr(uncategorizedText);
 
             double amt = Math.max(0.0, s.getTotalAmount());
             double pct = Math.max(0.0, Math.min(100.0, s.getPercentage()));
@@ -281,7 +283,7 @@ public class CategoryChartView extends View {
         if (stats.isEmpty()) {
             emptyPaint.getFontMetrics(fontMetrics);
             float centerY = height / 2f - (fontMetrics.ascent + fontMetrics.descent) / 2f;
-            canvas.drawText(EMPTY_TEXT, width / 2f, centerY, emptyPaint);
+            canvas.drawText(emptyText, width / 2f, centerY, emptyPaint);
             return;
         }
 

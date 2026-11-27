@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- 账本数据完全本地离线，不参与系统备份 -->
+    <exclude domain="root" path="." />
+</full-backup-content>

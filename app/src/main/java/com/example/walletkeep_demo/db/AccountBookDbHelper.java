@@ -12,7 +12,7 @@ import com.example.walletkeep_demo.model.Category;
  */
 public class AccountBookDbHelper extends SQLiteOpenHelper {
     public static final String DB_NAME = "account_book.db";
-    public static final int DB_VERSION = 1;
+    public static final int DB_VERSION = 2;
     public static final String TABLE_CATEGORY = "category";
     public static final String TABLE_BILL = "bill";
 
@@ -62,7 +62,7 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
                 + ")");
         db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_BILL + " ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                + "amount REAL NOT NULL, "
+                + "amount_cents INTEGER NOT NULL, "
                 + "type INTEGER NOT NULL, "
                 + "category_id INTEGER NOT NULL, "
                 + "note TEXT, "
@@ -76,11 +76,39 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // 无损增量升级框架：禁止 DROP TABLE 清空用户历史账单与自定义分类
+        // 逐版本增量迁移：禁止通过 DROP TABLE 清空用户历史账单与自定义分类
         if (oldVersion < 1) {
             onCreate(db);
+            return;
         }
-        // 后续若 DB_VERSION 升级到 2+，在此按版本号顺序执行 ALTER TABLE / 增量建表迁移
+        if (oldVersion < 2) {
+            migrateBillAmountToCents(db);
+        }
+    }
+
+    /**
+     * v1 -> v2：bill.amount (REAL) 迁移为 bill.amount_cents (INTEGER)，避免浮点累计误差。
+     * 采用“新建表 -> 复制转换 -> 删除旧表 -> 重命名”的方式，保留全部历史数据与主键。
+     */
+    private void migrateBillAmountToCents(SQLiteDatabase db) {
+        String migrationTable = TABLE_BILL + "_migration";
+        db.execSQL("CREATE TABLE " + migrationTable + " ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "amount_cents INTEGER NOT NULL, "
+                + "type INTEGER NOT NULL, "
+                + "category_id INTEGER NOT NULL, "
+                + "note TEXT, "
+                + "bill_date TEXT NOT NULL, "
+                + "receipt_path TEXT, "
+                + "created_at TEXT NOT NULL, "
+                + "FOREIGN KEY(category_id) REFERENCES " + TABLE_CATEGORY + "(id)"
+                + ")");
+        db.execSQL("INSERT INTO " + migrationTable
+                + " (id, amount_cents, type, category_id, note, bill_date, receipt_path, created_at) "
+                + "SELECT id, CAST(ROUND(amount * 100) AS INTEGER), type, category_id, note, bill_date, "
+                + "receipt_path, created_at FROM " + TABLE_BILL);
+        db.execSQL("DROP TABLE " + TABLE_BILL);
+        db.execSQL("ALTER TABLE " + migrationTable + " RENAME TO " + TABLE_BILL);
     }
 
     private void seedDefaultCategories(SQLiteDatabase db) {

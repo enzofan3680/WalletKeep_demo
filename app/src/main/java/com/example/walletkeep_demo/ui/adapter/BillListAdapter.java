@@ -74,16 +74,15 @@ public class BillListAdapter extends BaseAdapter {
         }
 
         Bill bill = items.get(position);
-        String categoryName = trimToNull(bill.getCategoryName());
-        holder.tvCategory.setText(categoryName != null ? categoryName : "未分类");
-        holder.tvIcon.setText(resolveIcon(bill.getCategoryIcon(), categoryName));
+        holder.tvCategory.setText(bill.getCategoryNameOr(context.getString(R.string.uncategorized)));
+        holder.tvIcon.setText(bill.getCategoryIconOr(context.getString(R.string.icon_fallback_bill)));
 
         String receiptPath = trimToNull(bill.getReceiptPath());
         boolean hasValidReceipt = receiptPath != null && new File(receiptPath).isFile();
         holder.tvReceiptTag.setVisibility(hasValidReceipt ? View.VISIBLE : View.GONE);
 
         String note = trimToNull(bill.getNote());
-        holder.tvNote.setText(note != null ? note : "无备注");
+        holder.tvNote.setText(note != null ? note : context.getString(R.string.no_note));
 
         holder.tvAmount.setText(DateAmountUtils.formatSignedAmount(currency, bill.getType(), bill.getAmount()));
         int amountColorRes = (bill.getType() == Category.TYPE_INCOME)
@@ -107,17 +106,6 @@ public class BillListAdapter extends BaseAdapter {
         }
         String trimmed = s.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static String resolveIcon(String rawIcon, String categoryName) {
-        String icon = trimToNull(rawIcon);
-        if (icon != null) {
-            return icon;
-        }
-        if (categoryName != null && !categoryName.isEmpty()) {
-            return categoryName.substring(0, 1);
-        }
-        return "账";
     }
 
     private static final class ViewHolder {

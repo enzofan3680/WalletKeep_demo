@@ -4,10 +4,8 @@ import android.app.DatePickerDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -23,10 +21,13 @@ import android.widget.FrameLayout;
 import android.widget.GridView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ListAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
@@ -39,6 +40,7 @@ import com.example.walletkeep_demo.storage.FileStorageManager;
 import com.example.walletkeep_demo.storage.PrefsManager;
 import com.example.walletkeep_demo.ui.adapter.CategoryGridAdapter;
 import com.example.walletkeep_demo.util.DateAmountUtils;
+import com.example.walletkeep_demo.util.UiUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -59,7 +61,6 @@ public class AddEditBillActivity extends AppCompatActivity {
 
     public static final String EXTRA_BILL_ID = "extra_bill_id";
 
-    private static final int REQUEST_PICK_RECEIPT = 1001;
     private static final int CATEGORY_COLUMNS = 4;
 
     private static final String STATE_TYPE = "state_type";
@@ -102,6 +103,7 @@ public class AddEditBillActivity extends AppCompatActivity {
     private String currentReceiptPath = "";
     private String pendingNewReceiptPath = "";
     private boolean savedSuccessfully = false;
+    private ActivityResultLauncher<String> receiptPickerLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,7 +127,7 @@ public class AddEditBillActivity extends AppCompatActivity {
         if (isEditMode) {
             existingBill = billDao.getById(editBillId);
             if (existingBill == null) {
-                Toast.makeText(this, "账单不存在或已被删除", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
                 finish();
                 return;
             }
@@ -161,7 +163,7 @@ public class AddEditBillActivity extends AppCompatActivity {
         }
 
         tvCurrencySymbol.setText(prefsManager.getDefaultCurrency());
-        btnSaveBill.setText(isEditMode ? "保存修改" : "保存账单");
+        btnSaveBill.setText(isEditMode ? R.string.action_save_changes : R.string.action_save_bill);
         btnDeleteBill.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
 
         categoryAdapter = new CategoryGridAdapter(this, null);
@@ -173,6 +175,24 @@ public class AddEditBillActivity extends AppCompatActivity {
         updateReceiptPreview();
 
         setupListeners();
+
+        receiptPickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.GetContent(),
+                new ActivityResultCallback<Uri>() {
+                    @Override
+                    public void onActivityResult(Uri uri) {
+                        handleReceiptPicked(uri);
+                    }
+                });
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                cleanupPendingNewReceipt();
+                setEnabled(false);
+                getOnBackPressedDispatcher().onBackPressed();
+            }
+        });
     }
 
     @Override
@@ -193,12 +213,6 @@ public class AddEditBillActivity extends AppCompatActivity {
             return true;
         }
         return super.onOptionsItemSelected(item);
-    }
-
-    @Override
-    public void onBackPressed() {
-        cleanupPendingNewReceipt();
-        super.onBackPressed();
     }
 
     @Override
@@ -262,7 +276,7 @@ public class AddEditBillActivity extends AppCompatActivity {
                     return true;
                 }
                 if (category.isDefault()) {
-                    Toast.makeText(AddEditBillActivity.this, "系统默认分类不可删除", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(AddEditBillActivity.this, R.string.toast_default_category_undeletable, Toast.LENGTH_SHORT).show();
                     return true;
                 }
                 showDeleteCategoryDialog(category);
@@ -360,133 +374,70 @@ public class AddEditBillActivity extends AppCompatActivity {
             }
         }
         categoryAdapter.setSelectedCategoryId(resolvedSelection);
-        setGridViewHeightBasedOnChildren(gvCategories, CATEGORY_COLUMNS);
-    }
-
-    private void setGridViewHeightBasedOnChildren(final GridView gridView, final int columns) {
-        ListAdapter adapter = gridView.getAdapter();
-        if (adapter == null) {
-            return;
-        }
-        int count = adapter.getCount();
-        ViewGroup.LayoutParams params = gridView.getLayoutParams();
-        if (count == 0) {
-            params.height = 0;
-            gridView.setLayoutParams(params);
-            return;
-        }
-
-        final int gridWidth = gridView.getWidth();
-        int hSpacing = dpToPx(8);
-        int vSpacing = dpToPx(8);
-
-        int itemWidthSpec;
-        if (gridWidth > 0) {
-            int contentWidth = gridWidth - gridView.getPaddingLeft() - gridView.getPaddingRight()
-                    - hSpacing * Math.max(0, columns - 1);
-            int colWidth = Math.max(1, contentWidth / columns);
-            itemWidthSpec = View.MeasureSpec.makeMeasureSpec(colWidth, View.MeasureSpec.EXACTLY);
-        } else {
-            itemWidthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-        }
-        int itemHeightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
-
-        int rows = (count + columns - 1) / columns;
-        int totalHeight = gridView.getPaddingTop() + gridView.getPaddingBottom();
-        for (int row = 0; row < rows; row++) {
-            int rowMaxHeight = 0;
-            for (int col = 0; col < columns; col++) {
-                int index = row * columns + col;
-                if (index >= count) {
-                    break;
-                }
-                View itemView = adapter.getView(index, null, gridView);
-                itemView.measure(itemWidthSpec, itemHeightSpec);
-                int measuredHeight = itemView.getMeasuredHeight();
-                if (measuredHeight > rowMaxHeight) {
-                    rowMaxHeight = measuredHeight;
-                }
-            }
-            totalHeight += rowMaxHeight;
-        }
-        if (rows > 1) {
-            totalHeight += vSpacing * (rows - 1);
-        }
-
-        params.height = totalHeight;
-        gridView.setLayoutParams(params);
-
-        if (gridWidth == 0) {
-            gridView.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (!isFinishing() && gridView.getWidth() > 0) {
-                        setGridViewHeightBasedOnChildren(gridView, columns);
-                    }
-                }
-            });
-        }
+        UiUtils.setGridViewHeightBasedOnChildren(gvCategories, CATEGORY_COLUMNS);
     }
 
     private void showAddCategoryDialog() {
         FrameLayout container = new FrameLayout(this);
-        int horizontalPadding = dpToPx(20);
-        int topPadding = dpToPx(12);
+        int horizontalPadding = UiUtils.dpToPx(this, 20);
+        int topPadding = UiUtils.dpToPx(this, 12);
         container.setPadding(horizontalPadding, topPadding, horizontalPadding, 0);
 
         final EditText input = new EditText(this);
-        input.setHint("输入新分类名称，如：奶茶、书籍");
+        input.setHint(R.string.hint_new_category);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT);
         input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(12)});
         container.addView(input);
 
         new AlertDialog.Builder(this)
-                .setTitle(currentType == Category.TYPE_INCOME ? "新增收入分类" : "新增支出分类")
+                .setTitle(currentType == Category.TYPE_INCOME
+                        ? R.string.title_new_income_category : R.string.title_new_expense_category)
                 .setView(container)
-                .setPositiveButton("确定", new DialogInterface.OnClickListener() {
+                .setPositiveButton(R.string.action_confirm, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         String name = input.getText().toString().trim();
                         if (name.isEmpty()) {
-                            Toast.makeText(AddEditBillActivity.this, "分类名称不能为空", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_name_empty, Toast.LENGTH_SHORT).show();
                             return;
                         }
                         long newId = categoryDao.addCustomCategory(name, currentType);
                         if (newId == -1L) {
-                            Toast.makeText(AddEditBillActivity.this, "该分类已存在", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_exists, Toast.LENGTH_SHORT).show();
                         } else {
-                            Toast.makeText(AddEditBillActivity.this, "已添加分类「" + name + "」", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this,
+                                    getString(R.string.fmt_category_added, name), Toast.LENGTH_SHORT).show();
                             loadCategories(newId);
                         }
                     }
                 })
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
     private void showDeleteCategoryDialog(final Category category) {
         new AlertDialog.Builder(this)
-                .setTitle("删除分类")
-                .setMessage("确定删除自定义分类「" + category.getName() + "」吗？")
-                .setPositiveButton("删除", new DialogInterface.OnClickListener() {
+                .setTitle(R.string.dialog_delete_category_title)
+                .setMessage(getString(R.string.fmt_delete_category_message, category.getName()))
+                .setPositiveButton(R.string.action_delete, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         int result = categoryDao.deleteCustomCategory(category.getId());
                         if (result == CategoryDao.DELETE_OK) {
-                            Toast.makeText(AddEditBillActivity.this, "已删除分类", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_deleted, Toast.LENGTH_SHORT).show();
                             long currentSelected = categoryAdapter.getSelectedCategoryId();
                             loadCategories(currentSelected);
                         } else if (result == CategoryDao.DELETE_ERR_IN_USE) {
-                            Toast.makeText(AddEditBillActivity.this, "该分类下已有账单记录，无法删除", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_in_use, Toast.LENGTH_SHORT).show();
                         } else if (result == CategoryDao.DELETE_ERR_DEFAULT) {
-                            Toast.makeText(AddEditBillActivity.this, "系统默认分类不可删除", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_default_category_undeletable, Toast.LENGTH_SHORT).show();
                         } else {
                             loadCategories(categoryAdapter.getSelectedCategoryId());
                         }
                     }
                 })
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
@@ -525,77 +476,71 @@ public class AddEditBillActivity extends AppCompatActivity {
     }
 
     private void launchReceiptPicker() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("image/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
         try {
-            startActivityForResult(Intent.createChooser(intent, "选择票据图片"), REQUEST_PICK_RECEIPT);
+            receiptPickerLauncher.launch("image/*");
         } catch (ActivityNotFoundException e) {
-            Toast.makeText(this, "未找到可用的图片选择器", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.toast_no_image_picker, Toast.LENGTH_SHORT).show();
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_PICK_RECEIPT && resultCode == RESULT_OK && data != null) {
-            final Uri uri = data.getData();
-            if (uri == null || isCopyingReceipt) {
-                return;
-            }
-            isCopyingReceipt = true;
-            btnPickReceipt.setEnabled(false);
-            btnPickReceipt.setText("正在保存...");
-            btnSaveBill.setEnabled(false);
-            final Context appContext = getApplicationContext();
-            ioExecutor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        final String copiedPath = FileStorageManager.copyReceiptImage(appContext, uri);
-                        final Bitmap thumb = FileStorageManager.decodeSampledBitmap(copiedPath, 360, 360);
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (isUiInvalid()) {
-                                    FileStorageManager.deleteReceiptFile(copiedPath);
-                                    return;
-                                }
-                                isCopyingReceipt = false;
-                                btnPickReceipt.setEnabled(true);
-                                btnPickReceipt.setText("选择图片");
-                                btnSaveBill.setEnabled(true);
-                                if (!pendingNewReceiptPath.isEmpty() && !pendingNewReceiptPath.equals(copiedPath)) {
-                                    FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
-                                }
-                                pendingNewReceiptPath = copiedPath;
-                                currentReceiptPath = copiedPath;
-                                applyReceiptPreviewBitmap(copiedPath, thumb);
-                            }
-                        });
-                    } catch (final IOException e) {
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (isUiInvalid()) {
-                                    return;
-                                }
-                                isCopyingReceipt = false;
-                                btnPickReceipt.setEnabled(true);
-                                btnPickReceipt.setText("选择图片");
-                                btnSaveBill.setEnabled(true);
-                                String msg = e.getMessage();
-                                Toast.makeText(
-                                        AddEditBillActivity.this,
-                                        "保存图片失败：" + (msg == null || msg.trim().isEmpty() ? "无法写入文件" : msg),
-                                        Toast.LENGTH_SHORT
-                                ).show();
-                            }
-                        });
-                    }
-                }
-            });
+    private void handleReceiptPicked(Uri uri) {
+        if (uri == null || isCopyingReceipt) {
+            return;
         }
+        isCopyingReceipt = true;
+        btnPickReceipt.setEnabled(false);
+        btnPickReceipt.setText(R.string.label_saving);
+        btnSaveBill.setEnabled(false);
+        final Context appContext = getApplicationContext();
+        ioExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final String copiedPath = FileStorageManager.copyReceiptImage(appContext, uri);
+                    final Bitmap thumb = FileStorageManager.decodeSampledBitmap(copiedPath, 360, 360);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                FileStorageManager.deleteReceiptFile(copiedPath);
+                                return;
+                            }
+                            isCopyingReceipt = false;
+                            btnPickReceipt.setEnabled(true);
+                            btnPickReceipt.setText(R.string.action_pick_image);
+                            btnSaveBill.setEnabled(true);
+                            if (!pendingNewReceiptPath.isEmpty() && !pendingNewReceiptPath.equals(copiedPath)) {
+                                FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
+                            }
+                            pendingNewReceiptPath = copiedPath;
+                            currentReceiptPath = copiedPath;
+                            applyReceiptPreviewBitmap(copiedPath, thumb);
+                        }
+                    });
+                } catch (final IOException e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            isCopyingReceipt = false;
+                            btnPickReceipt.setEnabled(true);
+                            btnPickReceipt.setText(R.string.action_pick_image);
+                            btnSaveBill.setEnabled(true);
+                            String msg = e.getMessage();
+                            String reason = (msg == null || msg.trim().isEmpty())
+                                    ? getString(R.string.error_unable_write_file) : msg;
+                            Toast.makeText(
+                                    AddEditBillActivity.this,
+                                    getString(R.string.fmt_receipt_save_failed, reason),
+                                    Toast.LENGTH_SHORT
+                            ).show();
+                        }
+                    });
+                }
+            }
+        });
     }
 
     private void updateReceiptPreview() {
@@ -619,15 +564,12 @@ public class AddEditBillActivity extends AppCompatActivity {
             tvReceiptPath.setText(getString(R.string.fmt_receipt_name_path, file.getName(), path));
         } else {
             ivReceiptThumb.setImageResource(android.R.drawable.ic_menu_report_image);
-            tvReceiptPath.setText("原票据文件不存在");
+            tvReceiptPath.setText(R.string.receipt_file_missing);
         }
     }
 
     private boolean isUiInvalid() {
-        if (isFinishing()) {
-            return true;
-        }
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed();
+        return isFinishing() || isDestroyed();
     }
 
     private void showReceiptZoomDialog() {
@@ -636,19 +578,19 @@ public class AddEditBillActivity extends AppCompatActivity {
         }
         Bitmap fullBitmap = FileStorageManager.decodeSampledBitmap(currentReceiptPath, 1080, 1080);
         if (fullBitmap == null) {
-            Toast.makeText(this, "原票据文件不存在", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.receipt_file_missing, Toast.LENGTH_SHORT).show();
             return;
         }
 
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        int padding = dpToPx(16);
-        container.setPadding(padding, padding, padding, dpToPx(8));
+        int padding = UiUtils.dpToPx(this, 16);
+        container.setPadding(padding, padding, padding, UiUtils.dpToPx(this, 8));
 
         ImageView imageView = new ImageView(this);
         imageView.setAdjustViewBounds(true);
         imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        imageView.setMaxHeight(dpToPx(420));
+        imageView.setMaxHeight(UiUtils.dpToPx(this, 420));
         imageView.setImageBitmap(fullBitmap);
         LinearLayout.LayoutParams imgParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -664,13 +606,13 @@ public class AddEditBillActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        textParams.topMargin = dpToPx(10);
+        textParams.topMargin = UiUtils.dpToPx(this, 10);
         container.addView(pathView, textParams);
 
         new AlertDialog.Builder(this)
-                .setTitle("票据大图预览")
+                .setTitle(R.string.dialog_receipt_zoom_title)
                 .setView(container)
-                .setPositiveButton("关闭", null)
+                .setPositiveButton(R.string.action_close, null)
                 .show();
     }
 
@@ -690,14 +632,14 @@ public class AddEditBillActivity extends AppCompatActivity {
     private void saveBill() {
         double amount = DateAmountUtils.parsePositiveAmount(etAmount.getText().toString());
         if (amount <= 0.0) {
-            etAmount.setError("请输入大于 0 的有效金额");
+            etAmount.setError(getString(R.string.error_amount_positive));
             etAmount.requestFocus();
             return;
         }
 
         long categoryId = categoryAdapter.getSelectedCategoryId();
         if (categoryId <= 0L) {
-            Toast.makeText(this, "请先选择账单分类", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.toast_select_category, Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -716,14 +658,15 @@ public class AddEditBillActivity extends AppCompatActivity {
             if (updatedRows > 0) {
                 savedSuccessfully = true;
                 pendingNewReceiptPath = "";
-                if (!originalReceiptPath.isEmpty() && !originalReceiptPath.equals(bill.getReceiptPath())) {
+                if (!originalReceiptPath.isEmpty() && !originalReceiptPath.equals(bill.getReceiptPath())
+                        && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
                     FileStorageManager.deleteReceiptFile(originalReceiptPath);
                 }
-                Toast.makeText(this, "修改已保存", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.toast_bill_updated, Toast.LENGTH_SHORT).show();
                 setResult(RESULT_OK);
                 finish();
             } else {
-                Toast.makeText(this, "保存失败，账单可能已被删除", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.toast_save_failed_deleted, Toast.LENGTH_SHORT).show();
             }
         } else {
             bill.setCreatedAt(DateAmountUtils.getCurrentDateTime());
@@ -731,47 +674,40 @@ public class AddEditBillActivity extends AppCompatActivity {
             if (insertedId > 0L) {
                 savedSuccessfully = true;
                 pendingNewReceiptPath = "";
-                Toast.makeText(this, "记账成功", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.toast_bill_saved, Toast.LENGTH_SHORT).show();
                 setResult(RESULT_OK);
                 finish();
             } else {
-                Toast.makeText(this, "保存账单失败", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.toast_bill_save_failed, Toast.LENGTH_SHORT).show();
             }
         }
     }
 
     private void confirmDeleteBill() {
         new AlertDialog.Builder(this)
-                .setTitle("删除账单")
-                .setMessage("确定删除这笔账单吗？删除后无法恢复。")
-                .setPositiveButton("删除", new DialogInterface.OnClickListener() {
+                .setTitle(R.string.dialog_delete_bill_title)
+                .setMessage(R.string.dialog_delete_bill_message_confirm)
+                .setPositiveButton(R.string.action_delete, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         int deletedRows = billDao.delete(editBillId);
                         if (deletedRows > 0) {
                             savedSuccessfully = true;
                             cleanupPendingNewReceipt();
-                            if (!originalReceiptPath.isEmpty()) {
+                            if (!originalReceiptPath.isEmpty()
+                                    && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
                                 FileStorageManager.deleteReceiptFile(originalReceiptPath);
                             }
-                            Toast.makeText(AddEditBillActivity.this, "账单已删除", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
                             setResult(RESULT_OK);
                             finish();
                         } else {
-                            Toast.makeText(AddEditBillActivity.this, "账单不存在或已被删除", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
                         }
                     }
                 })
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
-    }
-
-    private int dpToPx(int dp) {
-        return Math.round(TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP,
-                dp,
-                getResources().getDisplayMetrics()
-        ));
     }
 
     private static String safeTrim(String text) {
