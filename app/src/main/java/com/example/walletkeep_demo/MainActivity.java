@@ -3,6 +3,7 @@ package com.example.walletkeep_demo;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ListView;
@@ -233,19 +234,24 @@ public class MainActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
-                final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
-                final List<Bill> recentBills = billDao.getRecentBills(RECENT_BILL_LIMIT);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != loadToken || isUiInvalid()) {
-                            return;
+                try {
+                    final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
+                    final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
+                    final List<Bill> recentBills = billDao.getRecentBills(RECENT_BILL_LIMIT);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            applyDashboard(month, currency, monthlyBudgetCents, reminderEnabled,
+                                    monthExpense, monthIncome, recentBills);
                         }
-                        applyDashboard(month, currency, monthlyBudgetCents, reminderEnabled,
-                                monthExpense, monthIncome, recentBills);
-                    }
-                });
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("MainActivity", "loadDashboard failed", e);
+                    postError(R.string.error_load_failed);
+                }
             }
         });
     }
@@ -331,17 +337,22 @@ public class MainActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                billDao.seedDemoBills();
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (isUiInvalid()) {
-                            return;
+                try {
+                    billDao.seedDemoBills();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isUiInvalid()) {
+                                return;
+                            }
+                            Toast.makeText(MainActivity.this, R.string.toast_demo_seeded, Toast.LENGTH_SHORT).show();
+                            loadDashboard();
                         }
-                        Toast.makeText(MainActivity.this, R.string.toast_demo_seeded, Toast.LENGTH_SHORT).show();
-                        loadDashboard();
-                    }
-                });
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("MainActivity", "seedDemoBills failed", e);
+                    postError(R.string.error_operation_generic);
+                }
             }
         });
     }
@@ -359,31 +370,47 @@ public class MainActivity extends AppCompatActivity {
                         dbExecutor.execute(new Runnable() {
                             @Override
                             public void run() {
-                                final int deletedRows = billDao.delete(billId);
-                                if (deletedRows > 0 && !receiptPath.isEmpty()
-                                        && billDao.countBillsByReceiptPath(receiptPath) == 0) {
-                                    FileStorageManager.deleteReceiptFile(receiptPath);
-                                }
-                                runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        if (isUiInvalid()) {
-                                            return;
-                                        }
-                                        if (deletedRows > 0) {
-                                            Toast.makeText(MainActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
-                                        } else {
-                                            Toast.makeText(MainActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
-                                        }
-                                        loadDashboard();
+                                try {
+                                    final int deletedRows = billDao.delete(billId);
+                                    if (deletedRows > 0 && !receiptPath.isEmpty()
+                                            && billDao.countBillsByReceiptPath(receiptPath) == 0) {
+                                        FileStorageManager.deleteReceiptFile(getApplicationContext(), receiptPath);
                                     }
-                                });
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            if (deletedRows > 0) {
+                                                Toast.makeText(MainActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
+                                            } else {
+                                                Toast.makeText(MainActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
+                                            }
+                                            loadDashboard();
+                                        }
+                                    });
+                                } catch (final RuntimeException e) {
+                                    Log.e("MainActivity", "delete bill failed", e);
+                                    postError(R.string.error_operation_generic);
+                                }
                             }
                         });
                     }
                 })
                 .setNegativeButton(R.string.action_cancel, null)
                 .show();
+    }
+
+    private void postError(final int messageRes) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!isUiInvalid()) {
+                    Toast.makeText(MainActivity.this, messageRes, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     private boolean isUiInvalid() {

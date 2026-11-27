@@ -5,6 +5,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
+import android.util.Log;
 import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.MenuItem;
@@ -328,36 +329,41 @@ public class BillListActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final List<String> optionMonths = buildMonthValues(billDao.getDistinctMonths());
-                final List<String> optionMonthLabels = buildMonthLabels(optionMonths, allMonthsLabel);
-                final List<Long> optionIds = new ArrayList<Long>();
-                final List<String> optionLabels = new ArrayList<String>();
-                optionIds.add(CATEGORY_ALL);
-                optionLabels.add(allCategoriesLabel);
-                for (Category category : loadCategoriesForType(typeSnapshot)) {
-                    if (category != null) {
-                        optionIds.add(category.getId());
-                        optionLabels.add(category.getName());
-                    }
-                }
-                final long resolvedCategory = containsCategoryId(optionIds, categorySnapshot)
-                        ? categorySnapshot : CATEGORY_ALL;
-                final String resolvedMonth = optionMonths.contains(monthSnapshot) ? monthSnapshot : "";
-                final List<Bill> bills = billDao.queryBills(
-                        resolvedMonth, typeSnapshot, resolvedCategory, keywordSnapshot);
-
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != loadToken || isUiInvalid()) {
-                            return;
+                try {
+                    final List<String> optionMonths = buildMonthValues(billDao.getDistinctMonths());
+                    final List<String> optionMonthLabels = buildMonthLabels(optionMonths, allMonthsLabel);
+                    final List<Long> optionIds = new ArrayList<Long>();
+                    final List<String> optionLabels = new ArrayList<String>();
+                    optionIds.add(CATEGORY_ALL);
+                    optionLabels.add(allCategoriesLabel);
+                    for (Category category : loadCategoriesForType(typeSnapshot)) {
+                        if (category != null) {
+                            optionIds.add(category.getId());
+                            optionLabels.add(category.getName());
                         }
-                        applyMonthOptions(optionMonths, optionMonthLabels, resolvedMonth);
-                        syncTypeSpinnerSelection();
-                        applyCategoryOptions(optionIds, optionLabels, resolvedCategory);
-                        renderBills(bills);
                     }
-                });
+                    final long resolvedCategory = containsCategoryId(optionIds, categorySnapshot)
+                            ? categorySnapshot : CATEGORY_ALL;
+                    final String resolvedMonth = optionMonths.contains(monthSnapshot) ? monthSnapshot : "";
+                    final List<Bill> bills = billDao.queryBills(
+                            resolvedMonth, typeSnapshot, resolvedCategory, keywordSnapshot);
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            applyMonthOptions(optionMonths, optionMonthLabels, resolvedMonth);
+                            syncTypeSpinnerSelection();
+                            applyCategoryOptions(optionIds, optionLabels, resolvedCategory);
+                            renderBills(bills);
+                        }
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("BillListActivity", "refresh filters failed", e);
+                    postError(R.string.error_load_failed);
+                }
             }
         });
     }
@@ -468,16 +474,21 @@ public class BillListActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final List<Bill> bills = billDao.queryBills(month, type, categoryId, keyword);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != loadToken || isUiInvalid()) {
-                            return;
+                try {
+                    final List<Bill> bills = billDao.queryBills(month, type, categoryId, keyword);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            renderBills(bills);
                         }
-                        renderBills(bills);
-                    }
-                });
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("BillListActivity", "load filtered bills failed", e);
+                    postError(R.string.error_load_failed);
+                }
             }
         });
     }
@@ -493,30 +504,35 @@ public class BillListActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final List<Long> optionIds = new ArrayList<Long>();
-                final List<String> optionLabels = new ArrayList<String>();
-                optionIds.add(CATEGORY_ALL);
-                optionLabels.add(allCategoriesLabel);
-                for (Category category : loadCategoriesForType(type)) {
-                    if (category != null) {
-                        optionIds.add(category.getId());
-                        optionLabels.add(category.getName());
-                    }
-                }
-                final long resolvedCategory = containsCategoryId(optionIds, categorySnapshot)
-                        ? categorySnapshot : CATEGORY_ALL;
-                final List<Bill> bills = billDao.queryBills(month, type, resolvedCategory, keyword);
-
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != loadToken || isUiInvalid()) {
-                            return;
+                try {
+                    final List<Long> optionIds = new ArrayList<Long>();
+                    final List<String> optionLabels = new ArrayList<String>();
+                    optionIds.add(CATEGORY_ALL);
+                    optionLabels.add(allCategoriesLabel);
+                    for (Category category : loadCategoriesForType(type)) {
+                        if (category != null) {
+                            optionIds.add(category.getId());
+                            optionLabels.add(category.getName());
                         }
-                        applyCategoryOptions(optionIds, optionLabels, resolvedCategory);
-                        renderBills(bills);
                     }
-                });
+                    final long resolvedCategory = containsCategoryId(optionIds, categorySnapshot)
+                            ? categorySnapshot : CATEGORY_ALL;
+                    final List<Bill> bills = billDao.queryBills(month, type, resolvedCategory, keyword);
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            applyCategoryOptions(optionIds, optionLabels, resolvedCategory);
+                            renderBills(bills);
+                        }
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("BillListActivity", "reload categories failed", e);
+                    postError(R.string.error_load_failed);
+                }
             }
         });
     }
@@ -560,25 +576,30 @@ public class BillListActivity extends AppCompatActivity {
                         dbExecutor.execute(new Runnable() {
                             @Override
                             public void run() {
-                                final int deletedRows = billDao.delete(billId);
-                                if (deletedRows > 0 && !receiptPath.isEmpty()
-                                        && billDao.countBillsByReceiptPath(receiptPath) == 0) {
-                                    FileStorageManager.deleteReceiptFile(receiptPath);
-                                }
-                                runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        if (isUiInvalid()) {
-                                            return;
-                                        }
-                                        if (deletedRows > 0) {
-                                            Toast.makeText(BillListActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
-                                        } else {
-                                            Toast.makeText(BillListActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
-                                        }
-                                        refreshFilterOptionsAndBills();
+                                try {
+                                    final int deletedRows = billDao.delete(billId);
+                                    if (deletedRows > 0 && !receiptPath.isEmpty()
+                                            && billDao.countBillsByReceiptPath(receiptPath) == 0) {
+                                        FileStorageManager.deleteReceiptFile(getApplicationContext(), receiptPath);
                                     }
-                                });
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            if (deletedRows > 0) {
+                                                Toast.makeText(BillListActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
+                                            } else {
+                                                Toast.makeText(BillListActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
+                                            }
+                                            refreshFilterOptionsAndBills();
+                                        }
+                                    });
+                                } catch (final RuntimeException e) {
+                                    Log.e("BillListActivity", "delete bill failed", e);
+                                    postError(R.string.error_operation_generic);
+                                }
                             }
                         });
                     }
@@ -592,6 +613,17 @@ public class BillListActivity extends AppCompatActivity {
         if (imm != null && view != null) {
             imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
         }
+    }
+
+    private void postError(final int messageRes) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!isUiInvalid()) {
+                    Toast.makeText(BillListActivity.this, messageRes, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     private boolean isUiInvalid() {

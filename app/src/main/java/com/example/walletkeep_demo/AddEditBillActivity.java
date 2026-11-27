@@ -7,8 +7,11 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MenuItem;
 import android.view.View;
@@ -46,12 +49,14 @@ import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * 记一笔 / 编辑账单页面：支持收支切换、金额输入、动态网格分类选择、
@@ -62,6 +67,7 @@ public class AddEditBillActivity extends AppCompatActivity {
     public static final String EXTRA_BILL_ID = "extra_bill_id";
 
     private static final int CATEGORY_COLUMNS = 4;
+    private static final long RECEIPT_COPY_TIMEOUT_MS = 30_000L;
 
     private static final String STATE_TYPE = "state_type";
     private static final String STATE_CATEGORY_ID = "state_category_id";
@@ -104,6 +110,9 @@ public class AddEditBillActivity extends AppCompatActivity {
     private String pendingNewReceiptPath = "";
     private boolean savedSuccessfully = false;
     private ActivityResultLauncher<String> receiptPickerLauncher;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private Future<?> receiptCopyFuture;
+    private int receiptCopyToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,7 +134,14 @@ public class AddEditBillActivity extends AppCompatActivity {
         bindViews();
 
         if (isEditMode) {
-            existingBill = billDao.getById(editBillId);
+            try {
+                existingBill = billDao.getById(editBillId);
+            } catch (final RuntimeException e) {
+                Log.e("AddEditBillActivity", "load bill failed", e);
+                Toast.makeText(this, R.string.error_load_failed, Toast.LENGTH_SHORT).show();
+                finish();
+                return;
+            }
             if (existingBill == null) {
                 Toast.makeText(this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
                 finish();
@@ -218,7 +234,12 @@ public class AddEditBillActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        ioExecutor.shutdown();
+        receiptCopyToken++;
+        uiHandler.removeCallbacksAndMessages(null);
+        if (receiptCopyFuture != null) {
+            receiptCopyFuture.cancel(true);
+        }
+        ioExecutor.shutdownNow();
         if (isFinishing() && !savedSuccessfully) {
             cleanupPendingNewReceipt();
         }
@@ -356,7 +377,15 @@ public class AddEditBillActivity extends AppCompatActivity {
     }
 
     private void loadCategories(long preferredCategoryId) {
-        List<Category> categories = categoryDao.getByType(currentType);
+        List<Category> categories;
+        try {
+            categories = categoryDao.getByType(currentType);
+        } catch (final RuntimeException e) {
+            Log.e("AddEditBillActivity", "load categories failed", e);
+            categoryAdapter.updateData(new ArrayList<Category>());
+            Toast.makeText(this, R.string.error_load_failed, Toast.LENGTH_SHORT).show();
+            return;
+        }
         categoryAdapter.updateData(categories);
 
         long resolvedSelection = -1L;
@@ -402,13 +431,19 @@ public class AddEditBillActivity extends AppCompatActivity {
                             Toast.makeText(AddEditBillActivity.this, R.string.toast_category_name_empty, Toast.LENGTH_SHORT).show();
                             return;
                         }
-                        long newId = categoryDao.addCustomCategory(name, currentType);
-                        if (newId == -1L) {
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_exists, Toast.LENGTH_SHORT).show();
-                        } else {
+                        try {
+                            long newId = categoryDao.addCustomCategory(name, currentType);
+                            if (newId == -1L) {
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_category_exists, Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(AddEditBillActivity.this,
+                                        getString(R.string.fmt_category_added, name), Toast.LENGTH_SHORT).show();
+                                loadCategories(newId);
+                            }
+                        } catch (final RuntimeException e) {
+                            Log.e("AddEditBillActivity", "add category failed", e);
                             Toast.makeText(AddEditBillActivity.this,
-                                    getString(R.string.fmt_category_added, name), Toast.LENGTH_SHORT).show();
-                            loadCategories(newId);
+                                    getString(R.string.error_operation_failed, errorMessage(e)), Toast.LENGTH_LONG).show();
                         }
                     }
                 })
@@ -423,17 +458,23 @@ public class AddEditBillActivity extends AppCompatActivity {
                 .setPositiveButton(R.string.action_delete, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        int result = categoryDao.deleteCustomCategory(category.getId());
-                        if (result == CategoryDao.DELETE_OK) {
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_deleted, Toast.LENGTH_SHORT).show();
-                            long currentSelected = categoryAdapter.getSelectedCategoryId();
-                            loadCategories(currentSelected);
-                        } else if (result == CategoryDao.DELETE_ERR_IN_USE) {
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_category_in_use, Toast.LENGTH_SHORT).show();
-                        } else if (result == CategoryDao.DELETE_ERR_DEFAULT) {
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_default_category_undeletable, Toast.LENGTH_SHORT).show();
-                        } else {
-                            loadCategories(categoryAdapter.getSelectedCategoryId());
+                        try {
+                            int result = categoryDao.deleteCustomCategory(category.getId());
+                            if (result == CategoryDao.DELETE_OK) {
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_category_deleted, Toast.LENGTH_SHORT).show();
+                                long currentSelected = categoryAdapter.getSelectedCategoryId();
+                                loadCategories(currentSelected);
+                            } else if (result == CategoryDao.DELETE_ERR_IN_USE) {
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_category_in_use, Toast.LENGTH_SHORT).show();
+                            } else if (result == CategoryDao.DELETE_ERR_DEFAULT) {
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_default_category_undeletable, Toast.LENGTH_SHORT).show();
+                            } else {
+                                loadCategories(categoryAdapter.getSelectedCategoryId());
+                            }
+                        } catch (final RuntimeException e) {
+                            Log.e("AddEditBillActivity", "delete category failed", e);
+                            Toast.makeText(AddEditBillActivity.this,
+                                    getString(R.string.error_operation_failed, errorMessage(e)), Toast.LENGTH_LONG).show();
                         }
                     }
                 })
@@ -492,7 +533,8 @@ public class AddEditBillActivity extends AppCompatActivity {
         btnPickReceipt.setText(R.string.label_saving);
         btnSaveBill.setEnabled(false);
         final Context appContext = getApplicationContext();
-        ioExecutor.execute(new Runnable() {
+        final int copyToken = ++receiptCopyToken;
+        receiptCopyFuture = ioExecutor.submit(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -501,8 +543,8 @@ public class AddEditBillActivity extends AppCompatActivity {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            if (isUiInvalid()) {
-                                FileStorageManager.deleteReceiptFile(copiedPath);
+                            if (copyToken != receiptCopyToken || isUiInvalid()) {
+                                FileStorageManager.deleteReceiptFile(appContext, copiedPath);
                                 return;
                             }
                             isCopyingReceipt = false;
@@ -510,18 +552,18 @@ public class AddEditBillActivity extends AppCompatActivity {
                             btnPickReceipt.setText(R.string.action_pick_image);
                             btnSaveBill.setEnabled(true);
                             if (!pendingNewReceiptPath.isEmpty() && !pendingNewReceiptPath.equals(copiedPath)) {
-                                FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
+                                FileStorageManager.deleteReceiptFile(appContext, pendingNewReceiptPath);
                             }
                             pendingNewReceiptPath = copiedPath;
                             currentReceiptPath = copiedPath;
                             applyReceiptPreviewBitmap(copiedPath, thumb);
                         }
                     });
-                } catch (final IOException e) {
+                } catch (final IOException | RuntimeException e) {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            if (isUiInvalid()) {
+                            if (copyToken != receiptCopyToken || isUiInvalid()) {
                                 return;
                             }
                             isCopyingReceipt = false;
@@ -541,6 +583,23 @@ public class AddEditBillActivity extends AppCompatActivity {
                 }
             }
         });
+        uiHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (copyToken != receiptCopyToken || !isCopyingReceipt) {
+                    return;
+                }
+                receiptCopyToken++;
+                if (receiptCopyFuture != null) {
+                    receiptCopyFuture.cancel(true);
+                }
+                isCopyingReceipt = false;
+                btnPickReceipt.setEnabled(true);
+                btnPickReceipt.setText(R.string.action_pick_image);
+                btnSaveBill.setEnabled(true);
+                Toast.makeText(AddEditBillActivity.this, R.string.receipt_copy_timeout, Toast.LENGTH_LONG).show();
+            }
+        }, RECEIPT_COPY_TIMEOUT_MS);
     }
 
     private void updateReceiptPreview() {
@@ -624,7 +683,7 @@ public class AddEditBillActivity extends AppCompatActivity {
 
     private void cleanupPendingNewReceipt() {
         if (pendingNewReceiptPath != null && !pendingNewReceiptPath.isEmpty()) {
-            FileStorageManager.deleteReceiptFile(pendingNewReceiptPath);
+            FileStorageManager.deleteReceiptFile(getApplicationContext(),pendingNewReceiptPath);
             pendingNewReceiptPath = "";
         }
     }
@@ -651,35 +710,41 @@ public class AddEditBillActivity extends AppCompatActivity {
         bill.setBillDate(selectedDate);
         bill.setReceiptPath(currentReceiptPath != null ? currentReceiptPath : "");
 
-        if (isEditMode) {
-            bill.setId(editBillId);
-            bill.setCreatedAt(existingBill.getCreatedAt());
-            int updatedRows = billDao.update(bill);
-            if (updatedRows > 0) {
-                savedSuccessfully = true;
-                pendingNewReceiptPath = "";
-                if (!originalReceiptPath.isEmpty() && !originalReceiptPath.equals(bill.getReceiptPath())
-                        && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
-                    FileStorageManager.deleteReceiptFile(originalReceiptPath);
+        try {
+            if (isEditMode) {
+                bill.setId(editBillId);
+                bill.setCreatedAt(existingBill.getCreatedAt());
+                int updatedRows = billDao.update(bill);
+                if (updatedRows > 0) {
+                    savedSuccessfully = true;
+                    pendingNewReceiptPath = "";
+                    if (!originalReceiptPath.isEmpty() && !originalReceiptPath.equals(bill.getReceiptPath())
+                            && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
+                        FileStorageManager.deleteReceiptFile(getApplicationContext(), originalReceiptPath);
+                    }
+                    Toast.makeText(this, R.string.toast_bill_updated, Toast.LENGTH_SHORT).show();
+                    setResult(RESULT_OK);
+                    finish();
+                } else {
+                    Toast.makeText(this, R.string.toast_save_failed_deleted, Toast.LENGTH_SHORT).show();
                 }
-                Toast.makeText(this, R.string.toast_bill_updated, Toast.LENGTH_SHORT).show();
-                setResult(RESULT_OK);
-                finish();
             } else {
-                Toast.makeText(this, R.string.toast_save_failed_deleted, Toast.LENGTH_SHORT).show();
+                bill.setCreatedAt(DateAmountUtils.getCurrentDateTime());
+                long insertedId = billDao.insert(bill);
+                if (insertedId > 0L) {
+                    savedSuccessfully = true;
+                    pendingNewReceiptPath = "";
+                    Toast.makeText(this, R.string.toast_bill_saved, Toast.LENGTH_SHORT).show();
+                    setResult(RESULT_OK);
+                    finish();
+                } else {
+                    Toast.makeText(this, R.string.toast_bill_save_failed, Toast.LENGTH_SHORT).show();
+                }
             }
-        } else {
-            bill.setCreatedAt(DateAmountUtils.getCurrentDateTime());
-            long insertedId = billDao.insert(bill);
-            if (insertedId > 0L) {
-                savedSuccessfully = true;
-                pendingNewReceiptPath = "";
-                Toast.makeText(this, R.string.toast_bill_saved, Toast.LENGTH_SHORT).show();
-                setResult(RESULT_OK);
-                finish();
-            } else {
-                Toast.makeText(this, R.string.toast_bill_save_failed, Toast.LENGTH_SHORT).show();
-            }
+        } catch (final RuntimeException e) {
+            Log.e("AddEditBillActivity", "save bill failed", e);
+            Toast.makeText(this, getString(R.string.error_operation_failed, errorMessage(e)),
+                    Toast.LENGTH_LONG).show();
         }
     }
 
@@ -690,19 +755,25 @@ public class AddEditBillActivity extends AppCompatActivity {
                 .setPositiveButton(R.string.action_delete, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        int deletedRows = billDao.delete(editBillId);
-                        if (deletedRows > 0) {
-                            savedSuccessfully = true;
-                            cleanupPendingNewReceipt();
-                            if (!originalReceiptPath.isEmpty()
-                                    && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
-                                FileStorageManager.deleteReceiptFile(originalReceiptPath);
+                        try {
+                            int deletedRows = billDao.delete(editBillId);
+                            if (deletedRows > 0) {
+                                savedSuccessfully = true;
+                                cleanupPendingNewReceipt();
+                                if (!originalReceiptPath.isEmpty()
+                                        && billDao.countBillsByReceiptPath(originalReceiptPath) == 0) {
+                                    FileStorageManager.deleteReceiptFile(getApplicationContext(), originalReceiptPath);
+                                }
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
+                                setResult(RESULT_OK);
+                                finish();
+                            } else {
+                                Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
                             }
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_deleted, Toast.LENGTH_SHORT).show();
-                            setResult(RESULT_OK);
-                            finish();
-                        } else {
-                            Toast.makeText(AddEditBillActivity.this, R.string.toast_bill_not_found, Toast.LENGTH_SHORT).show();
+                        } catch (final RuntimeException e) {
+                            Log.e("AddEditBillActivity", "delete bill failed", e);
+                            Toast.makeText(AddEditBillActivity.this,
+                                    getString(R.string.error_operation_failed, errorMessage(e)), Toast.LENGTH_LONG).show();
                         }
                     }
                 })
@@ -712,5 +783,10 @@ public class AddEditBillActivity extends AppCompatActivity {
 
     private static String safeTrim(String text) {
         return text == null ? "" : text.trim();
+    }
+
+    private static String errorMessage(Throwable t) {
+        String msg = t == null ? null : t.getMessage();
+        return (msg == null || msg.trim().isEmpty()) ? "" : msg;
     }
 }

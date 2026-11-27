@@ -134,8 +134,8 @@ Leave an emulator the user started running, and say so in the report.
 
 ## Verification checklist
 
-- [ ] `testDebugUnitTest assembleDebug` succeeds (14 unit tests, 0 failures)
-- [ ] If storage/DB logic changed: `connectedDebugAndroidTest` passes (6 isolated tests, includes v1 → v2 migration)
+- [ ] `testDebugUnitTest assembleDebug` succeeds (21 unit tests, 0 failures)
+- [ ] If storage/DB logic changed: `connectedDebugAndroidTest` passes (11 isolated tests, includes v1 → v2 migration and receipt-path protection)
 - [ ] APK installs with `Success`
 - [ ] `MainActivity` visible (screenshot shows the blue dashboard card)
 - [ ] demo data generates correct totals and list rows

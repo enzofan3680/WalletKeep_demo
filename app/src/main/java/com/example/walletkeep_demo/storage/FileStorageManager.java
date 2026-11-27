@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.util.Log;
 
 import com.example.walletkeep_demo.db.BillDao;
 import com.example.walletkeep_demo.db.CategoryDao;
@@ -37,10 +38,18 @@ public final class FileStorageManager {
     public static final String DIR_EXPORTS = "exports";
     public static final String DIR_RECEIPTS = "receipts";
 
+    private static final String TAG = "FileStorageManager";
     private static final String BACKUP_PREFIX = "bill_backup_";
     private static final String BACKUP_SUFFIX = ".csv";
     private static final String RECEIPT_SNAPSHOT_PREFIX = "receipts_";
     private static final int COPY_BUFFER_SIZE = 8192;
+
+    /** 单个备份 CSV 最大 10 MB，防止一次性读入导致 OOM。 */
+    public static final long MAX_BACKUP_BYTES = 10L * 1024 * 1024;
+    /** 单张票据图片最大 25 MB，防止恶意 ContentProvider 占满磁盘。 */
+    public static final long MAX_RECEIPT_BYTES = 25L * 1024 * 1024;
+    /** CSV 预览最多读取 64 KB。 */
+    public static final int PREVIEW_MAX_BYTES = 64 * 1024;
 
     public static final class ExportResult {
         public final File csvFile;
@@ -86,54 +95,78 @@ public final class FileStorageManager {
 
     public static ExportResult exportBillsBackup(Context context, List<Bill> bills) throws IOException {
         File exportsDir = getExportsDir(context);
-        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.CHINA).format(new Date());
-        File file = new File(exportsDir, BACKUP_PREFIX + timestamp + BACKUP_SUFFIX);
-        File snapshotDir = new File(exportsDir, RECEIPT_SNAPSHOT_PREFIX + timestamp);
+        String base = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.CHINA).format(new Date());
+        File file;
+        File snapshotDir;
+        int attempt = 0;
+        do {
+            String suffix = (attempt == 0) ? base : base + "_" + attempt;
+            file = new File(exportsDir, BACKUP_PREFIX + suffix + BACKUP_SUFFIX);
+            snapshotDir = new File(exportsDir, RECEIPT_SNAPSHOT_PREFIX + suffix);
+            attempt++;
+        } while (file.exists() || snapshotDir.exists());
+
+        File tempFile = new File(exportsDir, file.getName() + ".tmp");
         int backedUpReceipts = 0;
-
-        FileOutputStream fos = null;
-        Writer writer = null;
+        boolean success = false;
         try {
-            fos = new FileOutputStream(file);
-            writer = new OutputStreamWriter(fos, "UTF-8");
-            writer.write(CsvCodec.formatBills(bills));
-            writer.flush();
+            FileOutputStream fos = null;
+            Writer writer = null;
+            try {
+                fos = new FileOutputStream(tempFile);
+                writer = new OutputStreamWriter(fos, "UTF-8");
+                writer.write(CsvCodec.formatBills(bills));
+                writer.flush();
+                fos.getFD().sync();
+            } finally {
+                if (writer != null) {
+                    closeQuietly(writer);
+                } else {
+                    closeQuietly(fos);
+                }
+            }
+
+            if (bills != null) {
+                Set<String> copiedNames = new HashSet<String>();
+                for (Bill bill : bills) {
+                    if (bill == null || bill.getReceiptPath() == null) {
+                        continue;
+                    }
+                    String path = bill.getReceiptPath().trim();
+                    if (!isReceiptPathSafe(context, path)) {
+                        continue;
+                    }
+                    File src = new File(path);
+                    if (!src.isFile()) {
+                        continue;
+                    }
+                    String name = src.getName();
+                    if (copiedNames.contains(name)) {
+                        continue;
+                    }
+                    if (!snapshotDir.exists() && !snapshotDir.mkdirs()) {
+                        throw new IOException("无法创建票据备份目录");
+                    }
+                    copyFile(src, new File(snapshotDir, name));
+                    copiedNames.add(name);
+                    backedUpReceipts++;
+                }
+            }
+
+            // 所有内容写完后才原子重命名，避免半截 CSV 出现在备份列表中
+            if (!tempFile.renameTo(file)) {
+                throw new IOException("无法完成备份文件写入");
+            }
+            success = true;
+            return new ExportResult(file, backedUpReceipts);
         } finally {
-            if (writer != null) {
-                closeQuietly(writer);
-            } else {
-                closeQuietly(fos);
+            if (!success) {
+                if (tempFile.exists() && !tempFile.delete()) {
+                    Log.w(TAG, "Failed to delete temp backup: " + tempFile.getAbsolutePath());
+                }
+                deleteRecursively(snapshotDir);
             }
         }
-
-        if (bills != null) {
-            Set<String> copiedNames = new HashSet<String>();
-            for (Bill bill : bills) {
-                if (bill == null || bill.getReceiptPath() == null) {
-                    continue;
-                }
-                String path = bill.getReceiptPath().trim();
-                if (path.isEmpty()) {
-                    continue;
-                }
-                File src = new File(path);
-                if (!src.isFile()) {
-                    continue;
-                }
-                String name = src.getName();
-                if (copiedNames.contains(name)) {
-                    continue;
-                }
-                if (!snapshotDir.exists() && !snapshotDir.mkdirs()) {
-                    throw new IOException("无法创建票据备份目录");
-                }
-                copyFile(src, new File(snapshotDir, name));
-                copiedNames.add(name);
-                backedUpReceipts++;
-            }
-        }
-
-        return new ExportResult(file, backedUpReceipts);
     }
 
     public static List<File> listBackupFiles(Context context) {
@@ -169,6 +202,9 @@ public final class FileStorageManager {
         if (file == null || !file.exists() || !file.isFile()) {
             throw new IOException("文件不存在");
         }
+        if (file.length() > MAX_BACKUP_BYTES) {
+            throw new IOException("备份文件超过 10 MB 限制");
+        }
         FileInputStream fis = null;
         BufferedReader reader = null;
         try {
@@ -183,6 +219,33 @@ public final class FileStorageManager {
                 }
                 sb.append(line);
                 first = false;
+            }
+            return sb.toString();
+        } finally {
+            if (reader != null) {
+                closeQuietly(reader);
+            } else {
+                closeQuietly(fis);
+            }
+        }
+    }
+
+    /**
+     * 预览用：最多读取 maxChars 个字符，避免超大文件撑爆 Dialog 的 TextView。
+     */
+    public static String readFileTextLimited(File file, int maxChars) throws IOException {
+        if (file == null || !file.exists() || !file.isFile()) {
+            throw new IOException("文件不存在");
+        }
+        FileInputStream fis = null;
+        BufferedReader reader = null;
+        try {
+            fis = new FileInputStream(file);
+            reader = new BufferedReader(new InputStreamReader(fis, "UTF-8"));
+            StringBuilder sb = new StringBuilder(Math.min(maxChars, 8192));
+            int c;
+            while (sb.length() < maxChars && (c = reader.read()) != -1) {
+                sb.append((char) c);
             }
             return sb.toString();
         } finally {
@@ -238,7 +301,7 @@ public final class FileStorageManager {
                     continue;
                 }
                 File existingFile = new File(rawPath);
-                if (existingFile.isFile()) {
+                if (isReceiptPathSafe(context, rawPath) && existingFile.isFile()) {
                     continue;
                 }
                 String fileName = existingFile.getName();
@@ -247,6 +310,10 @@ public final class FileStorageManager {
                         : null;
                 if (snapshotFile != null && snapshotFile.isFile() && receiptsDir != null) {
                     File restoredDest = new File(receiptsDir, fileName);
+                    if (restoredDest.isFile() && !sameContent(snapshotFile, restoredDest)) {
+                        // 同名但内容不同：生成唯一文件名，避免把备份图片错误关联到别的账单图片
+                        restoredDest = uniqueFile(receiptsDir, fileName);
+                    }
                     if (!restoredDest.isFile()) {
                         copyFile(snapshotFile, restoredDest);
                         newlyRestoredFiles.add(restoredDest);
@@ -309,7 +376,14 @@ public final class FileStorageManager {
         }
         File receiptsDir = getReceiptsDir(context);
         File destFile = new File(receiptsDir, "IMG_" + System.currentTimeMillis() + ".jpg");
-        InputStream in = context.getContentResolver().openInputStream(sourceUri);
+        InputStream in;
+        try {
+            in = context.getContentResolver().openInputStream(sourceUri);
+        } catch (SecurityException e) {
+            throw new IOException("无权限读取选中的图片", e);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("无法读取选中的图片", e);
+        }
         if (in == null) {
             throw new IOException("无法读取选中的图片");
         }
@@ -319,7 +393,15 @@ public final class FileStorageManager {
             out = new FileOutputStream(destFile);
             byte[] buffer = new byte[COPY_BUFFER_SIZE];
             int bytesRead;
+            long totalBytes = 0L;
             while ((bytesRead = in.read(buffer)) != -1) {
+                totalBytes += bytesRead;
+                if (totalBytes > MAX_RECEIPT_BYTES) {
+                    throw new IOException("图片超过 25 MB 限制");
+                }
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new IOException("图片保存已取消");
+                }
                 out.write(buffer, 0, bytesRead);
             }
             out.flush();
@@ -359,15 +441,35 @@ public final class FileStorageManager {
         }
     }
 
-    public static boolean deleteReceiptFile(String path) {
-        if (path == null || path.trim().isEmpty()) {
+    /**
+     * 只允许删除 receipts 目录内的文件，防止恶意 CSV 的 receipt_path 指向数据库/偏好设置。
+     */
+    public static boolean deleteReceiptFile(Context context, String path) {
+        if (!isReceiptPathSafe(context, path)) {
             return false;
         }
-        File file = new File(path);
+        File file = new File(path.trim());
         if (!file.exists() || !file.isFile()) {
             return false;
         }
-        return file.delete();
+        boolean deleted = file.delete();
+        if (!deleted) {
+            Log.w(TAG, "Failed to delete receipt file: " + path);
+        }
+        return deleted;
+    }
+
+    public static boolean isReceiptPathSafe(Context context, String path) {
+        if (context == null || path == null || path.trim().isEmpty()) {
+            return false;
+        }
+        try {
+            File receiptsDir = getReceiptsDir(context).getCanonicalFile();
+            File target = new File(path.trim()).getCanonicalFile();
+            return target.getPath().startsWith(receiptsDir.getPath() + File.separator);
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     public static int clearAllReceipts(Context context) {
@@ -378,8 +480,13 @@ public final class FileStorageManager {
         }
         int deleted = 0;
         for (File file : files) {
-            if (file != null && file.isFile() && file.delete()) {
+            if (file == null || !file.isFile()) {
+                continue;
+            }
+            if (file.delete()) {
                 deleted++;
+            } else {
+                Log.w(TAG, "Failed to delete receipt: " + file.getAbsolutePath());
             }
         }
         return deleted;
@@ -408,6 +515,53 @@ public final class FileStorageManager {
             }
         }
         return inSampleSize;
+    }
+
+    private static boolean sameContent(File first, File second) throws IOException {
+        if (first.length() != second.length()) {
+            return false;
+        }
+        InputStream in1 = null;
+        InputStream in2 = null;
+        try {
+            in1 = new FileInputStream(first);
+            in2 = new FileInputStream(second);
+            byte[] buffer1 = new byte[COPY_BUFFER_SIZE];
+            byte[] buffer2 = new byte[COPY_BUFFER_SIZE];
+            int read1;
+            while ((read1 = in1.read(buffer1)) != -1) {
+                int read2 = 0;
+                while (read2 < read1) {
+                    int r = in2.read(buffer2, read2, read1 - read2);
+                    if (r < 0) {
+                        return false;
+                    }
+                    read2 += r;
+                }
+                for (int i = 0; i < read1; i++) {
+                    if (buffer1[i] != buffer2[i]) {
+                        return false;
+                    }
+                }
+            }
+            return in2.read() == -1;
+        } finally {
+            closeQuietly(in1);
+            closeQuietly(in2);
+        }
+    }
+
+    private static File uniqueFile(File dir, String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        String base = dot > 0 ? fileName.substring(0, dot) : fileName;
+        String ext = dot > 0 ? fileName.substring(dot) : "";
+        int index = 1;
+        File candidate;
+        do {
+            candidate = new File(dir, base + "_" + index + ext);
+            index++;
+        } while (candidate.exists());
+        return candidate;
     }
 
     private static File resolveReceiptSnapshotDir(File csvFile) {
@@ -480,9 +634,26 @@ public final class FileStorageManager {
 
     private static void rollbackRestoredFiles(List<File> files) {
         for (File f : files) {
-            if (f != null && f.exists()) {
-                f.delete();
+            if (f != null && f.exists() && !f.delete()) {
+                Log.w(TAG, "Failed to roll back restored file: " + f.getAbsolutePath());
             }
+        }
+    }
+
+    private static void deleteRecursively(File target) {
+        if (target == null || !target.exists()) {
+            return;
+        }
+        if (target.isDirectory()) {
+            File[] children = target.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        if (!target.delete()) {
+            Log.w(TAG, "Failed to delete: " + target.getAbsolutePath());
         }
     }
 

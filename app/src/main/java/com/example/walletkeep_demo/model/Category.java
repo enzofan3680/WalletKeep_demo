@@ -1,5 +1,7 @@
 package com.example.walletkeep_demo.model;
 
+import com.example.walletkeep_demo.util.StringUtils;
+
 /**
  * 账单收支分类实体。
  */
@@ -71,8 +73,7 @@ public class Category {
                 return trimmed;
             }
         }
-        String trimmedName = name == null ? "" : name.trim();
-        return trimmedName.isEmpty() ? fallback : trimmedName.substring(0, 1);
+        return StringUtils.firstCodePointOr(name, fallback);
     }
 
     @Override

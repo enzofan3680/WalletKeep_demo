@@ -2,7 +2,7 @@
 
 一款完全离线的 Android 个人收支记账应用，用于演示 Android 三类本地数据持久化技术：**SQLite 关系型数据库**、**应用私有目录文件存储** 与 **SharedPreferences 简单存储**。
 
-> 原课程设计规格与实施计划保留在 [`docs/superpowers/`](docs/superpowers/)，构建配置已按当前开发机环境升级（见[构建说明](#构建说明)）。
+> 原课程设计规格与实施计划保留在 [`docs/superpowers/`](docs/superpowers/)。构建配置已按当前开发机环境升级，**与原作业要求的工具链存在明确差异**，详见下方「环境差异声明」。
 
 ## 功能预览
 
@@ -153,7 +153,7 @@ adb shell am start -n com.example.walletkeep_demo/.MainActivity
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
-当前单元测试共 14 个用例，覆盖 CSV 转义 / 解析异常、月份滚动、金额校验、预算 80% / 100% 边界与浮点精度。设备端另有 6 个隔离回归测试，覆盖 v1 → v2 金额迁移、CSV 覆盖恢复保护、增量去重与票据还原。
+当前单元测试共 21 个用例，覆盖 CSV 转义 / 解析异常 / 表头校验 / 资源上限、月份滚动、金额校验与上限、预算 80% / 100% 边界、浮点精度与 emoji 码点截取。设备端另有 11 个隔离回归测试，覆盖 v1 → v2 金额迁移、CSV 覆盖恢复保护、重复账单补回、票据路径越界防护、同秒备份唯一性、LIKE 通配符转义等。
 
 ## 使用说明
 
@@ -176,24 +176,45 @@ adb shell am start -n com.example.walletkeep_demo/.MainActivity
 
 无需存储权限，卸载应用即清除全部数据。
 
-## 构建说明
+## 环境差异声明（重要）
 
-本项目最初的课程设计要求为 AGP 3.6.3 + Gradle 5.6.4 + JDK 8 + compileSdk 29。为适配当前开发机（JDK 21、Android SDK 37）并避免下载已淘汰的旧工具链，构建配置已升级：
+本项目最初按课程设计要求编写：**AGP 3.6.3 + Gradle 5.6.4 + JDK 8 + compileSdk 29 + buildTools 28.0.3 + minSdk 17 + targetSdk 29 + appcompat 1.0.2**。该环境在当前开发机上无法直接复现（缺少对应 SDK、AGP 与依赖缓存，Gradle 官方源下载超时），因此构建配置已升级为本机可离线构建的版本。
 
-| 配置 | 原值 | 当前值 |
+| 配置 | 原课程要求 | 当前工程 |
 |---|---|---|
+| JDK | 8 | **21** |
 | Gradle | 5.6.4 | **9.5.0** |
 | AGP | 3.6.3 | **9.3.0** |
 | compileSdk | 29 | **37** |
+| buildTools | 28.0.3 | **36.0.0**（AGP 自动选用） |
 | minSdk | 17 | **24** |
 | targetSdk | 29 | **34** |
+| Java 语言级别 | 8 | **11** |
 | appcompat | 1.0.2 | **1.6.1** |
+| constraintlayout | 1.1.3 | **2.1.4** |
+| JUnit | 4.12 | **4.13.2** |
+| androidx.test.ext:junit | 1.1.1 | **1.1.5** |
+| Espresso | 3.2.0 | **3.5.1** |
+| Maven 仓库 | jcenter / google / mavenCentral | **阿里云镜像 + Google + Maven Central** |
+| Gradle 发行版 | services.gradle.org | **腾讯云镜像** |
 
-业务代码保持不变，仅做了 AGP 8+ 必需的配置调整：
+**影响与取舍：**
 
-- 在 `app/build.gradle` 中使用 `namespace`，并从 `AndroidManifest.xml` 移除 `package` 属性；
-- 为带 launcher `intent-filter` 的 `MainActivity` 显式声明 `android:exported="true"`；
-- 依赖仓库改为阿里云镜像，Gradle Wrapper 发行版改为腾讯云镜像，便于国内网络构建。
+- 当前工程面向 Windows 11 + 新版 Android Studio + Android SDK 37；**不能**再用 Android Studio 3.6 / AGP 3.6.3 打开，原老配置也无法在本机构建。
+- `targetSdk` 停在 34 而非 37，是为了避免 Android 15+ 强制 edge-to-edge 影响现有 XML 布局；这是唯一保留的 Lint `OldTargetApi` 警告。
+- **业务代码与数据语义保持不变**；仅做 AGP 8+ 必需调整：`namespace`、移除 Manifest `package`、`MainActivity` 声明 `android:exported="true"`、补充 backup rules。
+- [`docs/superpowers/`](docs/superpowers/) 下的规格与计划保留为**原始作业环境的历史设计记录**，其中的 `D:\26term-android-homework`、JDK 8、SDK 29 等不再代表当前工程，以本 README 为准。
+- 如果课程验收强制要求原环境：需要在目标机器安装 JDK 8、SDK 29、build-tools 28.0.3，并将上表对应构建文件改回原版本；建议在独立分支完成，不要与当前工程混用。
+
+## 数据安全与边界处理
+
+- **金额范围**：单笔金额限制在 `0.01 ~ 999,999,999.99`，CSV 解析与 DAO 写入双重校验，避免 `toCents` 饱和及 SQLite `SUM` 64 位整数溢出。
+- **票据路径**：导入与删除前都会做 canonical path 校验，只允许操作 `files/receipts/` 内的文件，防止恶意备份删除数据库或偏好设置。
+- **CSV 限制**：备份文件最大 10 MB、最多 50,000 行、单字段最多 10,000 字符；表头列顺序严格校验。
+- **原子备份**：先写 `.tmp` 并 `fsync`，全部票据复制完成后再重命名为正式文件；文件名精确到毫秒并带冲突后缀。
+- **任务串行化**：导出、导入、预览、清空、生成演示数据共享进程级单线程队列与 busy 标记，屏幕旋转不会产生并发写库/清空。
+- **图片附件**：单张最大 25 MB，30 秒超时看门狗；ContentResolver 的 `SecurityException` 会转换为可展示错误。
+- **异常兜底**：首页/列表/统计的后台查询与编辑页数据库操作均捕获 `RuntimeException`，失败时提示而不是崩溃进程。
 
 ## 常见问题
 

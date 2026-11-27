@@ -3,6 +3,7 @@ package com.example.walletkeep_demo.db;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import com.example.walletkeep_demo.model.Category;
@@ -84,6 +85,13 @@ public class AccountBookDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 2) {
             migrateBillAmountToCents(db);
         }
+    }
+
+    @Override
+    public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // v2 的 amount_cents 无法被旧版代码按 amount 读取；静默重建会丢用户数据，故明确失败
+        throw new SQLiteException(
+                "不支持数据库降级：数据库版本 " + oldVersion + "，当前应用期望版本 " + newVersion);
     }
 
     /**

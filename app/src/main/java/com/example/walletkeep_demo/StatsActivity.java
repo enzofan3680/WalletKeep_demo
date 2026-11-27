@@ -2,11 +2,13 @@ package com.example.walletkeep_demo;
 
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -191,18 +193,23 @@ public class StatsActivity extends AppCompatActivity {
         dbExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
-                final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
-                final List<CategoryStat> stats = billDao.getCategoryStats(month, type);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != loadToken || isUiInvalid()) {
-                            return;
+                try {
+                    final double monthExpense = billDao.getMonthlyTotal(month, Category.TYPE_EXPENSE);
+                    final double monthIncome = billDao.getMonthlyTotal(month, Category.TYPE_INCOME);
+                    final List<CategoryStat> stats = billDao.getCategoryStats(month, type);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (token != loadToken || isUiInvalid()) {
+                                return;
+                            }
+                            applyStats(currency, monthlyBudgetCents, monthExpense, monthIncome, stats);
                         }
-                        applyStats(currency, monthlyBudgetCents, monthExpense, monthIncome, stats);
-                    }
-                });
+                    });
+                } catch (final RuntimeException e) {
+                    Log.e("StatsActivity", "loadStats failed", e);
+                    postError(R.string.error_load_failed);
+                }
             }
         });
     }
@@ -271,6 +278,17 @@ public class StatsActivity extends AppCompatActivity {
 
         tvStatsTabIncome.setBackgroundResource(isExpense ? R.drawable.bg_tab_unselected : R.drawable.bg_tab_selected);
         tvStatsTabIncome.setTextColor(isExpense ? secondary : onPrimary);
+    }
+
+    private void postError(final int messageRes) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (!isUiInvalid()) {
+                    Toast.makeText(StatsActivity.this, messageRes, Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     private boolean isUiInvalid() {

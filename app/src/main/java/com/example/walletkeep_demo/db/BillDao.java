@@ -13,8 +13,10 @@ import com.example.walletkeep_demo.util.DateAmountUtils;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -127,8 +129,8 @@ public class BillDao {
             args.add(String.valueOf(categoryId));
         }
         if (keyword != null && !keyword.trim().isEmpty()) {
-            String pattern = "%" + keyword.trim() + "%";
-            conditions.add("(b.note LIKE ? OR c.name LIKE ?)");
+            String pattern = "%" + escapeLikePattern(keyword.trim()) + "%";
+            conditions.add("(b.note LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\')");
             args.add(pattern);
             args.add(pattern);
         }
@@ -351,6 +353,9 @@ public class BillDao {
         int skippedCount = 0;
         int updatedReceiptCount = 0;
         Set<String> attachedReceiptPaths = new HashSet<String>();
+        Map<DuplicateKey, List<ExistingBillMatch>> existingMatches =
+                new HashMap<DuplicateKey, List<ExistingBillMatch>>();
+        Map<DuplicateKey, Integer> consumedMatches = new HashMap<DuplicateKey, Integer>();
         db.beginTransaction();
         try {
             if (importMode == IMPORT_MODE_REPLACE) {
@@ -375,8 +380,18 @@ public class BillDao {
                 bill.setReceiptPath(incomingReceipt);
 
                 if (importMode == IMPORT_MODE_DEDUP_APPEND) {
-                    ExistingBillMatch match = findDuplicateBill(db, bill);
-                    if (match != null) {
+                    // 按“内容 + 出现次数”判重：备份里有 2 条完全相同的账单、
+                    // 库里只有 1 条时，应补回第 2 条，而不是两条都跳过。
+                    DuplicateKey key = new DuplicateKey(bill);
+                    List<ExistingBillMatch> matches = existingMatches.get(key);
+                    if (matches == null) {
+                        matches = findMatchingBills(db, key);
+                        existingMatches.put(key, matches);
+                    }
+                    int used = consumedMatches.containsKey(key) ? consumedMatches.get(key) : 0;
+                    if (used < matches.size()) {
+                        ExistingBillMatch match = matches.get(used);
+                        consumedMatches.put(key, used + 1);
                         skippedCount++;
                         String existingReceipt = match.receiptPath == null ? "" : match.receiptPath.trim();
                         boolean existingValid = !existingReceipt.isEmpty() && new File(existingReceipt).isFile();
@@ -415,36 +430,85 @@ public class BillDao {
         return new ImportResult(insertedCount, skippedCount, updatedReceiptCount, attachedReceiptPaths);
     }
 
-    private ExistingBillMatch findDuplicateBill(SQLiteDatabase db, Bill bill) {
+    private List<ExistingBillMatch> findMatchingBills(SQLiteDatabase db, DuplicateKey key) {
+        List<ExistingBillMatch> matches = new ArrayList<ExistingBillMatch>();
         Cursor cursor = null;
         try {
-            String note = bill.getNote() == null ? "" : bill.getNote();
-            String createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
             cursor = db.rawQuery(
                     "SELECT id, receipt_path FROM " + AccountBookDbHelper.TABLE_BILL
                             + " WHERE bill_date = ? AND type = ? AND amount_cents = ?"
                             + " AND category_id = ? AND IFNULL(note, '') = ? AND IFNULL(created_at, '') = ?"
-                            + " LIMIT 1",
+                            + " ORDER BY id",
                     new String[]{
-                            bill.getBillDate(),
-                            String.valueOf(bill.getType()),
-                            String.valueOf(DateAmountUtils.toCents(bill.getAmount())),
-                            String.valueOf(bill.getCategoryId()),
-                            note,
-                            createdAt
+                            key.billDate,
+                            String.valueOf(key.type),
+                            String.valueOf(key.amountCents),
+                            String.valueOf(key.categoryId),
+                            key.note,
+                            key.createdAt
                     }
             );
-            if (cursor.moveToFirst()) {
-                long id = cursor.getLong(0);
-                String receiptPath = cursor.getString(1);
-                return new ExistingBillMatch(id, receiptPath);
+            while (cursor.moveToNext()) {
+                matches.add(new ExistingBillMatch(cursor.getLong(0), cursor.getString(1)));
             }
-            return null;
         } finally {
             if (cursor != null) {
                 cursor.close();
             }
         }
+        return matches;
+    }
+
+    private static final class DuplicateKey {
+        final String billDate;
+        final int type;
+        final long amountCents;
+        final long categoryId;
+        final String note;
+        final String createdAt;
+
+        DuplicateKey(Bill bill) {
+            this.billDate = bill.getBillDate() == null ? "" : bill.getBillDate();
+            this.type = bill.getType();
+            this.amountCents = DateAmountUtils.toCents(bill.getAmount());
+            this.categoryId = bill.getCategoryId();
+            this.note = bill.getNote() == null ? "" : bill.getNote();
+            this.createdAt = bill.getCreatedAt() == null ? "" : bill.getCreatedAt();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof DuplicateKey)) {
+                return false;
+            }
+            DuplicateKey other = (DuplicateKey) o;
+            return type == other.type
+                    && amountCents == other.amountCents
+                    && categoryId == other.categoryId
+                    && billDate.equals(other.billDate)
+                    && note.equals(other.note)
+                    && createdAt.equals(other.createdAt);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = billDate.hashCode();
+            result = 31 * result + type;
+            result = 31 * result + (int) (amountCents ^ (amountCents >>> 32));
+            result = 31 * result + (int) (categoryId ^ (categoryId >>> 32));
+            result = 31 * result + note.hashCode();
+            result = 31 * result + createdAt.hashCode();
+            return result;
+        }
+    }
+
+    private static String escapeLikePattern(String input) {
+        return input.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private List<Bill> queryWithRawSql(String sql, String[] selectionArgs) {
@@ -465,8 +529,12 @@ public class BillDao {
     }
 
     private ContentValues buildContentValues(Bill bill, boolean includeCreatedAt) {
+        long amountCents = DateAmountUtils.toCents(bill.getAmount());
+        if (!DateAmountUtils.isAmountWithinRange(amountCents)) {
+            throw new IllegalArgumentException("金额超出允许范围: " + bill.getAmount());
+        }
         ContentValues values = new ContentValues();
-        values.put("amount_cents", DateAmountUtils.toCents(bill.getAmount()));
+        values.put("amount_cents", amountCents);
         values.put("type", bill.getType());
         values.put("category_id", bill.getCategoryId());
         values.put("note", bill.getNote());

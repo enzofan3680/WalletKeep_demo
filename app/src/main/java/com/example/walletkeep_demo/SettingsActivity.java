@@ -27,14 +27,13 @@ import com.example.walletkeep_demo.db.CategoryDao;
 import com.example.walletkeep_demo.model.Bill;
 import com.example.walletkeep_demo.storage.FileStorageManager;
 import com.example.walletkeep_demo.storage.PrefsManager;
+import com.example.walletkeep_demo.util.BackupTaskRunner;
 import com.example.walletkeep_demo.util.UiUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 预算与备份设置页面：管理月度预算、预警开关、默认币种、深色主题（SharedPreferences），
@@ -64,7 +63,6 @@ public class SettingsActivity extends AppCompatActivity {
 
     // 防止代码回填控件状态或 recreate 状态恢复时触发监听器循环
     private boolean isPopulatingUi = false;
-    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private boolean isIoBusy = false;
 
     @Override
@@ -89,12 +87,8 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         populateSettings();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        ioExecutor.shutdown();
+        // 旋转/重建后同步进程级任务状态，避免旧实例仍在导入时新实例按钮可用
+        setIoBusy(BackupTaskRunner.isBusy());
     }
 
     @Override
@@ -202,8 +196,34 @@ public class SettingsActivity extends AppCompatActivity {
         btnSeedDemo.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                billDao.seedDemoBills();
-                Toast.makeText(SettingsActivity.this, R.string.toast_demo_seeded, Toast.LENGTH_SHORT).show();
+                if (!BackupTaskRunner.tryStart()) {
+                    Toast.makeText(SettingsActivity.this, R.string.toast_backup_busy, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                setIoBusy(true);
+                BackupTaskRunner.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            billDao.seedDemoBills();
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (isUiInvalid()) {
+                                        return;
+                                    }
+                                    setIoBusy(false);
+                                    updateBackupInfo();
+                                    Toast.makeText(SettingsActivity.this, R.string.toast_demo_seeded, Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        } catch (final RuntimeException e) {
+                            postOperationError(getString(R.string.error_operation_failed, safeMessage(e)));
+                        } finally {
+                            BackupTaskRunner.finish();
+                        }
+                    }
+                });
             }
         });
 
@@ -289,12 +309,13 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void handleExportCsv() {
-        if (isIoBusy) {
+        if (!BackupTaskRunner.tryStart()) {
+            Toast.makeText(this, R.string.toast_backup_busy, Toast.LENGTH_SHORT).show();
             return;
         }
         setIoBusy(true);
         final Context appContext = getApplicationContext();
-        ioExecutor.execute(new Runnable() {
+        BackupTaskRunner.execute(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -336,17 +357,11 @@ public class SettingsActivity extends AppCompatActivity {
                         }
                     });
                 } catch (final IOException e) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (isUiInvalid()) {
-                                return;
-                            }
-                            setIoBusy(false);
-                            Toast.makeText(SettingsActivity.this,
-                                    getString(R.string.fmt_export_failed, safeMessage(e)), Toast.LENGTH_LONG).show();
-                        }
-                    });
+                    postOperationError(getString(R.string.fmt_export_failed, safeMessage(e)));
+                } catch (final RuntimeException e) {
+                    postOperationError(getString(R.string.fmt_export_failed, safeMessage(e)));
+                } finally {
+                    BackupTaskRunner.finish();
                 }
             }
         });
@@ -395,12 +410,13 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void runImportCsvAsync(final File chosenFile, final int importMode) {
-        if (isIoBusy) {
+        if (!BackupTaskRunner.tryStart()) {
+            Toast.makeText(this, R.string.toast_backup_busy, Toast.LENGTH_SHORT).show();
             return;
         }
         setIoBusy(true);
         final Context appContext = getApplicationContext();
-        ioExecutor.execute(new Runnable() {
+        BackupTaskRunner.execute(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -443,12 +459,20 @@ public class SettingsActivity extends AppCompatActivity {
                     postImportError(getString(R.string.fmt_import_failed, safeMessage(e)));
                 } catch (final SQLException e) {
                     postImportError(getString(R.string.fmt_db_write_failed, safeMessage(e)));
+                } catch (final RuntimeException e) {
+                    postImportError(getString(R.string.fmt_import_failed, safeMessage(e)));
+                } finally {
+                    BackupTaskRunner.finish();
                 }
             }
         });
     }
 
     private void postImportError(final String errorMessage) {
+        postOperationError(errorMessage);
+    }
+
+    private void postOperationError(final String errorMessage) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -476,13 +500,19 @@ public class SettingsActivity extends AppCompatActivity {
                 .setItems(labels, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
+                        if (!BackupTaskRunner.tryStart()) {
+                            Toast.makeText(SettingsActivity.this, R.string.toast_backup_busy, Toast.LENGTH_SHORT).show();
+                            return;
+                        }
                         final File chosenFile = files.get(which);
                         setIoBusy(true);
-                        ioExecutor.execute(new Runnable() {
+                        BackupTaskRunner.execute(new Runnable() {
                             @Override
                             public void run() {
                                 try {
-                                    final String content = FileStorageManager.readFileText(chosenFile);
+                                    final int maxChars = FileStorageManager.PREVIEW_MAX_BYTES;
+                                    final String content = FileStorageManager.readFileTextLimited(chosenFile, maxChars);
+                                    final boolean truncated = chosenFile.length() > maxChars;
                                     runOnUiThread(new Runnable() {
                                         @Override
                                         public void run() {
@@ -490,21 +520,15 @@ public class SettingsActivity extends AppCompatActivity {
                                                 return;
                                             }
                                             setIoBusy(false);
-                                            showCsvPreviewDialog(chosenFile, content);
+                                            showCsvPreviewDialog(chosenFile, content, truncated);
                                         }
                                     });
                                 } catch (final IOException e) {
-                                    runOnUiThread(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            if (isUiInvalid()) {
-                                                return;
-                                            }
-                                            setIoBusy(false);
-                                            Toast.makeText(SettingsActivity.this,
-                                                    getString(R.string.fmt_read_file_failed, safeMessage(e)), Toast.LENGTH_LONG).show();
-                                        }
-                                    });
+                                    postOperationError(getString(R.string.fmt_read_file_failed, safeMessage(e)));
+                                } catch (final RuntimeException e) {
+                                    postOperationError(getString(R.string.fmt_read_file_failed, safeMessage(e)));
+                                } finally {
+                                    BackupTaskRunner.finish();
                                 }
                             }
                         });
@@ -532,7 +556,7 @@ public class SettingsActivity extends AppCompatActivity {
         return (msg == null || msg.trim().isEmpty()) ? getString(R.string.generic_operation_error) : msg;
     }
 
-    private void showCsvPreviewDialog(File file, String content) {
+    private void showCsvPreviewDialog(File file, String content, boolean truncated) {
         int padding = UiUtils.dpToPx(this, 16);
         ScrollView verticalScroll = new ScrollView(this);
         HorizontalScrollView horizontalScroll = new HorizontalScrollView(this);
@@ -542,7 +566,11 @@ public class SettingsActivity extends AppCompatActivity {
         tvContent.setTextSize(12f);
         tvContent.setTextColor(ContextCompat.getColor(this, R.color.textPrimary));
         tvContent.setTextIsSelectable(true);
-        tvContent.setText(content == null || content.isEmpty() ? getString(R.string.empty_file) : content);
+        String text = (content == null || content.isEmpty()) ? getString(R.string.empty_file) : content;
+        if (truncated) {
+            text = text + getString(R.string.preview_truncated);
+        }
+        tvContent.setText(text);
 
         horizontalScroll.addView(tvContent);
         verticalScroll.addView(horizontalScroll);
@@ -561,9 +589,36 @@ public class SettingsActivity extends AppCompatActivity {
                 .setPositiveButton(R.string.action_confirm_clear, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        billDao.deleteAllBills();
-                        FileStorageManager.clearAllReceipts(SettingsActivity.this);
-                        Toast.makeText(SettingsActivity.this, R.string.toast_data_cleared, Toast.LENGTH_SHORT).show();
+                        if (!BackupTaskRunner.tryStart()) {
+                            Toast.makeText(SettingsActivity.this, R.string.toast_backup_busy, Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        setIoBusy(true);
+                        final Context appContext = getApplicationContext();
+                        BackupTaskRunner.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    billDao.deleteAllBills();
+                                    FileStorageManager.clearAllReceipts(appContext);
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isUiInvalid()) {
+                                                return;
+                                            }
+                                            setIoBusy(false);
+                                            updateBackupInfo();
+                                            Toast.makeText(SettingsActivity.this, R.string.toast_data_cleared, Toast.LENGTH_SHORT).show();
+                                        }
+                                    });
+                                } catch (final RuntimeException e) {
+                                    postOperationError(getString(R.string.error_operation_failed, safeMessage(e)));
+                                } finally {
+                                    BackupTaskRunner.finish();
+                                }
+                            }
+                        });
                     }
                 })
                 .setNegativeButton(R.string.action_cancel, null)

@@ -6,6 +6,10 @@
 - **开发语言与技术栈**：Java + Android XML 传统视图 + 原生 `SQLiteOpenHelper` + 应用私有目录文件读写 + `SharedPreferences`
 - **日期**：2026-11-24
 
+> **环境说明（2026-11-25 更新）**
+> 本文档记录的是最初课程设计环境：JDK 8 / AGP 3.6.3 / Gradle 5.6.4 / compileSdk 29 / targetSdk 29 / minSdk 17，项目路径 `D:\26term-android-homework\WalletKeep_demo`。
+> 当前仓库已升级为 JDK 21 / AGP 9.3.0 / Gradle 9.5.0 / compileSdk 37 / targetSdk 34 / minSdk 24，完整差异、原因与回退方式见根目录 `README.md` 的「环境差异声明」。本文档仅作为原始设计记录保留。
+
 ---
 
 ## 1. 设计背景与目标

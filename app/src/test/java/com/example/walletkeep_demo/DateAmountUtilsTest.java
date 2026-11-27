@@ -105,4 +105,14 @@ public class DateAmountUtilsTest {
         assertEquals(1L, largeOver.overCents);
         assertEquals("¥0.01", DateAmountUtils.formatCents("¥", largeOver.overCents));
     }
+
+    @Test
+    public void parsePositiveAmount_enforcesMaxAmountToPreventSumOverflow() {
+        assertEquals(DateAmountUtils.MAX_AMOUNT_YUAN,
+                DateAmountUtils.parsePositiveAmount("999999999.99"), 0.001);
+        assertEquals(-1.0, DateAmountUtils.parsePositiveAmount("1000000000.00"), 0.001);
+        assertEquals(-1.0, DateAmountUtils.parsePositiveAmount("1e18"), 0.001);
+        assertEquals(-1.0, DateAmountUtils.parsePositiveAmount("1e309"), 0.001);
+        assertEquals(Long.MAX_VALUE, DateAmountUtils.toCents(1e18));
+    }
 }

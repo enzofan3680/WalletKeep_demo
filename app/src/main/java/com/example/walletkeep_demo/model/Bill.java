@@ -1,5 +1,7 @@
 package com.example.walletkeep_demo.model;
 
+import com.example.walletkeep_demo.util.StringUtils;
+
 /**
  * 账单明细实体。
  */
@@ -116,7 +118,6 @@ public class Bill {
                 return trimmed;
             }
         }
-        String name = categoryName == null ? "" : categoryName.trim();
-        return name.isEmpty() ? fallback : name.substring(0, 1);
+        return StringUtils.firstCodePointOr(categoryName, fallback);
     }
 }
